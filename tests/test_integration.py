@@ -5,10 +5,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from fastapi import FastAPI
-from whimbox_adapter.config import WhimboxConfig
-from whimbox_adapter.plugin import Plugin as Adapter
-
 from app.config import ConfigCollection, config_manager
 from app.core import Config, Plugin
 from app.core.config.upgrade import convert_legacy
@@ -16,6 +12,10 @@ from app.models.config import PluginRecord
 from app.plugin.openapi import bind_openapi
 from app.plugin.types import PluginState
 from app.utils import io
+from fastapi import FastAPI
+
+from whimbox_adapter.config import WhimboxConfig
+from whimbox_adapter.plugin import Plugin as Adapter
 
 
 @pytest.mark.asyncio

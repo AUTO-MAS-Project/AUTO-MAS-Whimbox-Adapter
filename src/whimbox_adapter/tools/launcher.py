@@ -45,6 +45,7 @@ from auto_mas_core.host.utils import (
     get_logger,
 )
 from auto_mas_core.host.utils import process as process_tools
+
 from whimbox_adapter.tools.upstream import APP_EXE_NAME, REL_PYTHON_EXE
 
 logger = get_logger("奇想盒 进程启动")

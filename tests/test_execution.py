@@ -6,14 +6,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from app.config import ConfigCollection
+from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
+from app.utils import UTC4
+
 from whimbox_adapter.auto_proxy import AutoProxyTask
 from whimbox_adapter.config import WhimboxConfig, WhimboxUserConfig
 from whimbox_adapter.contracts import WhimboxRunEvent
 from whimbox_adapter.manager import WhimboxManager
-
-from app.config import ConfigCollection
-from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
-from app.utils import UTC4
 
 
 async def runtime(tmp_path, *, mode="AutoProxy"):

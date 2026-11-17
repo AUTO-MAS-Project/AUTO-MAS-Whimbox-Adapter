@@ -369,6 +369,7 @@ RESTORE_POOLS = [
 def restore_service(script_id: str, user_id: str, *, force: bool = False):
     """校验托管和账号归属后复用公共恢复服务。"""
     from auto_mas_core import Config
+
     from whimbox_adapter.api_service import _whimbox_script_config
 
     script = _whimbox_script_config(script_id)
