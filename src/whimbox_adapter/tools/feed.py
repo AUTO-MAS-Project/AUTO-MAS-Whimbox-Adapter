@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -51,6 +50,18 @@ WHIMBOX_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 LOG_FILE_PREFIX = "whimbox-"
 """日志文件名前缀（logs/whimbox-YYYY-MM-DD.log）"""
+
+
+def parse_log_timestamp(text: str, latest_time: datetime) -> datetime | None:
+    """复用文件事件的时间列判据，结果块续行返回 None。"""
+    try:
+        return strptime(
+            text[WHIMBOX_LOG_TIME_RANGE[0] : WHIMBOX_LOG_TIME_RANGE[1]],
+            WHIMBOX_LOG_TIME_FORMAT,
+            latest_time,
+        )
+    except ValueError:
+        return None
 
 
 def build_log_path_resolver(root_path: Path) -> Callable[[], Path]:
@@ -143,13 +154,7 @@ class LoguruFileFeed:
         # 未成功派发的整批仍须携带增量；消费方按起始游标跳过已经处理的部分。
         pending_lines = self.get_log_delta(self._emitted)
         for i, line in enumerate(pending_lines):
-            timestamp = None
-            with suppress(ValueError):
-                timestamp = strptime(
-                    line[WHIMBOX_LOG_TIME_RANGE[0] : WHIMBOX_LOG_TIME_RANGE[1]],
-                    WHIMBOX_LOG_TIME_FORMAT,
-                    latest_time,
-                )
+            timestamp = parse_log_timestamp(line, latest_time)
             await self._emit(
                 WhimboxRunEvent(
                     text=line,

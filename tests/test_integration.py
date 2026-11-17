@@ -72,7 +72,9 @@ async def test_legacy_accounts_survive_save_and_reload(tmp_path, legacy_children
 
 
 @pytest.mark.asyncio
-async def test_public_crud_restore_and_plugin_capabilities(monkeypatch):
+async def test_public_crud_restore_and_plugin_capabilities(
+    monkeypatch, tmp_path_factory
+):
     scripts = ConfigCollection.build([WhimboxConfig])
     await scripts.activate()
     monkeypatch.setattr(Config, "ScriptConfig", scripts)
@@ -141,6 +143,39 @@ async def test_public_crud_restore_and_plugin_capabilities(monkeypatch):
             )
         ).json()
         assert missing["code"] == 400
+        # A different managed script can share the same native config.
+        from whimbox_adapter.tools.update import installation_access
+        from whimbox_adapter.tools.upstream import WheelAssetsConfigSurface
+
+        root = tmp_path_factory.mktemp("whimbox-install")
+        other_id = scripts.add(WhimboxConfig, payload={"Info": {"RootPath": str(root)}})
+        scripts[sid].Info.RootPath = root
+        await scripts.commit()
+        await scripts[sid].commit()
+        other_user = (
+            await client.post("/api/scripts/user/add", json={"scriptId": str(other_id)})
+        ).json()
+        assert other_user["code"] == 200, other_user
+        surface = WheelAssetsConfigSurface(root)
+        surface.config_path.parent.mkdir()
+        surface.config_path.write_bytes(b'{"before": true}')
+        native = {**context, "target": "native"}
+        snapshot = (await client.post(prefix + "/ensure", json=native)).json()
+        assert snapshot["code"] == 200 and snapshot["created"], snapshot
+        surface.config_path.write_bytes(b'{"running": true}')
+        restore = {
+            **native,
+            "scriptId": str(other_id),
+            "userId": other_user["userId"],
+            "time": snapshot["time"],
+        }
+        with installation_access(scripts[sid].Info.RootPath):
+            blocked = (await client.post(prefix + "/restore", json=restore)).json()
+            assert blocked["code"] != 200, blocked
+            assert surface.config_path.read_bytes() == b'{"running": true}'
+        native_result = (await client.post(prefix + "/restore", json=restore)).json()
+        assert native_result["code"] == 200, native_result
+        assert surface.config_path.read_bytes() == b'{"before": true}'
         # No built-in restore pool remains after migration.
         assert (await client.get("/api/scripts/backup/list", params=context)).json()[
             "code"

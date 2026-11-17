@@ -63,7 +63,7 @@ from .contracts import (
     IRunResultParser,
     WhimboxRunEvent,
 )
-from .tools.feed import LoguruFileFeed, build_log_path_resolver
+from .tools.feed import LoguruFileFeed, build_log_path_resolver, parse_log_timestamp
 from .tools.launcher import EmbeddedPythonLauncher, find_upstream_pids
 from .tools.marker import WhimboxMarkerParser, is_benign_marker
 from .tools.update import RECOVERY_HINT, pending_marker
@@ -423,7 +423,9 @@ class AutoProxyTask(AutoProxyWorker):
         if event.log_delta is None:
             # 旧 feed 在首个事件前已暴露整批历史，保留其预读和全文判定契约。
             log = self.feed.log_text
-            await self.cur_user_log.set_state(content=log.splitlines(keepends=True))
+            lines = log.splitlines(keepends=True)
+            await self.cur_user_log.set_state(content=lines)
+            self._collect_failure_notes(lines, self.feed.latest_time)
             if isinstance(self.feed, LoguruFileFeed):
                 self._log_consumed_lines = self.feed.revision
             if self._incremental_parser is not None:
@@ -454,28 +456,40 @@ class AutoProxyTask(AutoProxyWorker):
         # 时间列，否则那几行 `❌…未完成` 会被当成失败提示重复收进来。
         # 「非失败提示」表（如「正在挖掘，无法收获」= 今日没得收）不进原因段，见
         # marker.py 的表注释；上游结果块原文本身不改写。
-        if event.timestamp is not None:
-            note = (
-                event.text.split(" - ", 1)[-1].strip()
-                if " - " in event.text
-                else event.text.strip()
-            )
-            if (
-                note.startswith(_FAILURE_LINE_PREFIXES)
-                and not is_benign_marker(note)
-                and note not in self._failure_notes_seen
-            ):
-                self.failure_notes.append(note)
-                self._failure_notes_seen.add(note)
+        if event.timestamp is not None and not isinstance(self.feed, LoguruFileFeed):
+            self._add_failure_note(event.text)
 
         await self._evaluate_and_release()
+
+    def _add_failure_note(
+        self, text: str, *, timestamp_reference: datetime | None = None
+    ) -> None:
+        note = text.split(" - ", 1)[-1].strip()
+        if (
+            note.startswith(_FAILURE_LINE_PREFIXES)
+            and not is_benign_marker(note)
+            and note not in self._failure_notes_seen
+            and (
+                timestamp_reference is None
+                or parse_log_timestamp(text, timestamp_reference) is not None
+            )
+        ):
+            self.failure_notes.append(note)
+            self._failure_notes_seen.add(note)
+
+    def _collect_failure_notes(self, lines: list[str], latest_time: datetime) -> None:
+        """整批终态判定前收齐带时间列的原因，不把结果块续行当原因。"""
+        for line in lines:
+            # 文件监控可能先读到末行的一部分，后续增量会把它拼回完整行。
+            if line.endswith(("\n", "\r")):
+                self._add_failure_note(line, timestamp_reference=latest_time)
 
     async def _append_log_delta(
         self, delta: tuple[str, ...], *, log_offset: int
     ) -> None:
         """追加尚未消费的完整日志行，同时维护历史和 marker 缓存。"""
 
-        assert self.cur_user_log is not None
+        assert self.cur_user_log is not None and self.feed is not None
         # feed 与退出看门狗都可补消费；提交让出期间共享同一游标和 marker。
         async with self._log_append_lock:
             pending = delta[max(0, self._log_consumed_lines - log_offset) :]
@@ -500,8 +514,10 @@ class AutoProxyTask(AutoProxyWorker):
                 )
             ):
                 text = content.pop() + text
-            content.extend(text.splitlines(keepends=True))
+            lines = text.splitlines(keepends=True)
+            content.extend(lines)
             await self.cur_user_log.set_state(content=content)
+            self._collect_failure_notes(lines, self.feed.latest_time)
             self._use_incremental_log = True
             if self._incremental_parser is not None:
                 self._incremental_parser.feed(raw_text)
@@ -589,16 +605,19 @@ class AutoProxyTask(AutoProxyWorker):
             and not self.stopped_manually,
         )
 
+        stopped = False
         try:
             # 先停止日志写入和进程并恢复原配置，结果提交失败也不遗留覆盖层。
             try:
                 await self._stop_monitoring()
             finally:
                 await self.launcher.terminate()
+                stopped = True
                 self._restore_config()
             await self._persist_user_run_result()
         finally:
-            await self.run_user_scripts_after()
+            if stopped:
+                await self.run_user_scripts_after()
 
         history_records = []
         for t, log_item in self.iter_logs():

@@ -209,6 +209,7 @@ class WhimboxManager(UserExpander):
 
     def build_worker(self, user, config):
         """按插件声明的真实模式派发已锁用户。"""
+        script_install.assert_no_pending_process(self.script_config.Info.RootPath)
         if self.task_info.mode == TaskMode.AUTO_PROXY:
             return AutoProxyTask(self, user, config)
         if self.task_info.mode == TaskMode.SCRIPT_CONFIG:

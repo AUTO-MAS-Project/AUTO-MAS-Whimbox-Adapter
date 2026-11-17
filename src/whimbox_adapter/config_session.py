@@ -39,10 +39,10 @@ from auto_mas_core.host.utils import (
     ProcessInfo,
     ProcessManager,
     get_logger,
-    process,
 )
 
-from .tools.upstream import APP_EXE_NAME, WheelAssetsConfigSurface
+from .tools.launcher import launch_installation_process, stop_installation_processes
+from .tools.upstream import APP_EXE_NAME, REL_PYTHON_EXE, WheelAssetsConfigSurface
 
 logger = get_logger("奇想盒 脚本设置")
 
@@ -63,6 +63,7 @@ class ScriptConfigTask(ScriptConfigWorker):
             name=APP_EXE_NAME, exe=str(self.exe_path), cmdline=None
         )
         self.config_surface = WheelAssetsConfigSurface(self.root_path)
+        self._launch_attempted = False
 
     async def main_logic(self) -> None:
         await self.cur_user_item.set_state(status="运行")
@@ -71,7 +72,10 @@ class ScriptConfigTask(ScriptConfigWorker):
             self.config_surface.snapshot_entry()
         await push_dispatch_log(self.script_info, "启动奇想盒 app（原生来源配置）")
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
-        await self.process_manager.open_process(
+        self._launch_attempted = True
+        await launch_installation_process(
+            self.process_manager,
+            self.root_path,
             self.exe_path,
             elevated=bool(self.script_config.Run.UseAdmin) and (not IS_ELEVATED),
             target_process=self.target_process,
@@ -100,12 +104,10 @@ class ScriptConfigTask(ScriptConfigWorker):
         )
 
     async def _kill_processes(self) -> None:
-        try:
-            await self.process_manager.kill()
-        except Exception as e:
-            logger.opt(exception=True).warning(f"通过进程管理器中止奇想盒失败: {e}")
-
-        try:
-            await process.kill_process(self.exe_path)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止奇想盒进程失败: {e}")
+        if self._launch_attempted:
+            await stop_installation_processes(
+                self.process_manager,
+                self.root_path,
+                self.exe_path,
+                self.root_path / REL_PYTHON_EXE,
+            )

@@ -1,6 +1,7 @@
 """Run real L3/L4 lifecycles with isolated process and upstream-file boundaries."""
 
 import asyncio
+import json
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -8,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from app.config import ConfigCollection
 from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
+from app.services import script_install
 from app.utils import UTC4
 
 from whimbox_adapter.auto_proxy import AutoProxyTask
@@ -209,6 +211,140 @@ async def test_incremental_feed_commits_log_content_and_retains_partial_lines(
     assert changes == [([], ["partial"]), (["partial"], ["partial tail\n"])]
     assert worker.cur_user_log.info.content == ["partial tail\n"]
     assert worker._log_consumed_lines == worker.feed.revision
+
+
+@pytest.mark.parametrize("exit_watcher", [False, True])
+async def test_terminal_log_batch_collects_failure_reasons(tmp_path, exit_watcher):
+    from whimbox_adapter.tools.feed import LoguruFileFeed
+
+    expander, user, config = await runtime(tmp_path)
+    worker = AutoProxyTask(expander, user, config)
+    await worker.prepare()
+    await expander.script_info.set_current_index(0)
+    now = datetime.now().astimezone()
+    worker.cur_user_log = await worker.add_log(now)
+    callback = (
+        AsyncMock(side_effect=OSError()) if exit_watcher else worker._on_run_event
+    )
+    worker.feed = LoguruFileFeed(callback, lambda: tmp_path / "log.txt")
+
+    def line(message):
+        return f"{now:%Y-%m-%d %H:%M:%S}.000 | INFO | main - {message}\n"
+
+    batch = [
+        line("开始任务"),
+        line("❌ 登录失败"),
+        line("🛑 网络超时"),
+        line("❌ 登录失败"),
+        line("❌ 正在挖掘，无法收获"),
+        line("一条龙任务完成: 任务结果如下："),
+        "❌ 某个任务未完成\n",
+        line("任务结束，程序退出"),
+    ]
+    if exit_watcher:
+        with pytest.raises(OSError):
+            await worker.feed._on_log(batch, now)
+        await worker._evaluate_and_release(refresh_pending=True)
+    else:
+        first_part, rest = batch[1].split("录", 1)
+        await worker.feed._on_log([batch[0], first_part], now)
+        batch = [batch[0], first_part, "录" + rest, *batch[2:]]
+        await worker.feed._on_log(batch, now)
+    assert worker.wait_event.is_set()
+    assert worker.cur_user_log.info.status == "Success!"
+    assert worker.failure_notes == ["❌ 登录失败", "🛑 网络超时"]
+
+
+async def test_unconfirmed_stop_preserves_overlay_and_reserves_install(
+    tmp_path_factory, monkeypatch
+):
+    from whimbox_adapter import manager
+    from whimbox_adapter.tools import launcher
+    from whimbox_adapter.tools.upstream import WheelAssetsConfigSurface
+
+    root = tmp_path_factory.mktemp("whimbox-install")
+    expander, user, config = await runtime(root)
+    expander.script_config.Run.RunTimesLimit = 2
+    await expander.script_config.commit()
+    monkeypatch.setattr(expander, "_prepare_update", AsyncMock())
+    monkeypatch.setattr(
+        manager, "Notify", SimpleNamespace(push_proxy_result=AsyncMock())
+    )
+    # The production reservation intentionally survives until the host exits.
+    retained = {}
+    monkeypatch.setattr(script_install, "_deferred_locks", retained)
+    monkeypatch.setattr(script_install, "_pending_processes", {})
+
+    surface = WheelAssetsConfigSurface(root)
+    original = {"OneDragon": {"auto_close_game": {"value": "false"}}}
+    surface.config_path.parent.mkdir()
+    surface.config_path.write_text(json.dumps(original), encoding="utf-8")
+    monkeypatch.setattr(surface, "check_install", lambda: None)
+    monkeypatch.setattr(surface, "_read_template_only", lambda: original)
+
+    class Feed:
+        latest_time = datetime.now()
+        log_text = "一条龙任务完成: 网络超时\n任务结束，程序退出\n"
+
+        def __init__(self, callback):
+            self.callback = callback
+
+        async def start(self, started):
+            await self.callback(WhimboxRunEvent(text=self.log_text))
+
+        async def stop(self):
+            pass
+
+    process = launcher.EmbeddedPythonLauncher(root, use_admin=False)
+    monkeypatch.setattr(process.process_manager, "open_process", AsyncMock())
+    monkeypatch.setattr(
+        process.process_manager, "kill", AsyncMock(side_effect=PermissionError())
+    )
+    monkeypatch.setattr(
+        launcher.process_tools, "kill_process", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        launcher.process_tools, "is_process_stopped", AsyncMock(return_value=False)
+    )
+    worker = AutoProxyTask(
+        expander,
+        user,
+        config,
+        config_surface=surface,
+        launcher=process,
+        feed_factory=Feed,
+    )
+    monkeypatch.setattr(worker, "run_user_scripts_after", AsyncMock())
+    monkeypatch.setattr(manager, "AutoProxyTask", lambda *_: worker)
+
+    try:
+        await asyncio.wait_for(expander.run(), 5)
+        assert user.info.status == "异常"
+        assert not config.is_locked
+        process.process_manager.open_process.assert_awaited_once()
+        worker.run_user_scripts_after.assert_not_awaited()
+        assert (
+            json.loads(surface.config_path.read_text(encoding="utf-8"))["OneDragon"][
+                "auto_close_game"
+            ]["value"]
+            == "true"
+        )
+        assert [
+            json.loads(path.read_bytes())
+            for path in surface.backup_root().glob("*/config.json")
+        ] == [original]
+        with pytest.raises(script_install.InstallUnsafeError):
+            expander.build_worker(user, config)
+        with pytest.raises(script_install.InstallUnsafeError):
+            with manager.installation_access(root):
+                pytest.fail(
+                    "The shared installation became available while its writer is unconfirmed"
+                )
+        assert retained
+    finally:
+        for handles in retained.values():
+            for handle in handles:
+                script_install._release_access(handle)
 
 
 @pytest.mark.asyncio

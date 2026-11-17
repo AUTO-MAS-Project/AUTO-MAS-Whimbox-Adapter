@@ -34,10 +34,12 @@ home 解析以 ``python312._pth`` 布局为主，env 仅防御性复刻 app 行�
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
 import psutil
+from auto_mas_core.host.services import script_install
 from auto_mas_core.host.utils import (
     IS_ELEVATED,
     ProcessInfo,
@@ -45,6 +47,10 @@ from auto_mas_core.host.utils import (
     get_logger,
 )
 from auto_mas_core.host.utils import process as process_tools
+from auto_mas_core.host.utils_common_process_runner import (
+    ProcessCleanupUnconfirmed,
+    is_process_cleanup_unconfirmed,
+)
 
 from whimbox_adapter.tools.upstream import APP_EXE_NAME, REL_PYTHON_EXE
 
@@ -52,6 +58,64 @@ logger = get_logger("奇想盒 进程启动")
 
 # 无头一条龙 CLI 入口（上游 main.py:83-90，自 tag 1.3.6 起存在）
 WHIMBOX_CLI_ARGS: tuple[str, ...] = ("-s", "-m", "whimbox.main", "startOneDragon")
+
+
+async def launch_installation_process(
+    manager: ProcessManager,
+    root: Path,
+    program: Path,
+    *args: str,
+    target_process: ProcessInfo,
+    elevated: bool,
+    env: dict[str, str] | None = None,
+) -> None:
+    """启动未确认收回时，阻止任务收尾改写同一安装。"""
+    try:
+        await manager.open_process(
+            program,
+            *args,
+            cwd=root,
+            target_process=target_process,
+            elevated=elevated,
+            env=env,
+        )
+    except (Exception, asyncio.CancelledError) as error:
+        # UAC 在宿主执行器线程中等待，同步调用可能在任务取消后才完成启动。
+        if is_process_cleanup_unconfirmed(error) or (
+            elevated and isinstance(error, asyncio.CancelledError)
+        ):
+            script_install.retain_installation_until_restart(root)
+        raise
+
+
+async def stop_installation_processes(
+    manager: ProcessManager, root: Path, *executables: Path
+) -> None:
+    """同时确认进程树中止结果与镜像路径；异常时保留安装占用。"""
+    script_install.assert_no_pending_process(root)
+    stopped = True
+    try:
+        for executable in executables:
+            try:
+                if not await process_tools.kill_process(executable):
+                    stopped = False
+            except Exception as error:
+                stopped = False
+                logger.opt(exception=True).warning(f"中止奇想盒进程失败: {error}")
+        try:
+            await manager.kill()
+        except Exception as error:
+            logger.opt(exception=True).warning(f"清理奇想盒进程句柄失败: {error}")
+        for executable in executables:
+            if not await process_tools.is_process_stopped(executable):
+                stopped = False
+        if not stopped:
+            raise ProcessCleanupUnconfirmed(
+                "无法确认奇想盒进程已退出，已保留安装现场，请关闭奇想盒并重启 MAS"
+            )
+    except BaseException:
+        script_install.retain_installation_until_restart(root)
+        raise
 
 
 def find_upstream_pids(root_path: Path) -> list[int]:
@@ -91,6 +155,7 @@ class EmbeddedPythonLauncher:
             name="python.exe", exe=str(self.python_exe), cmdline=None
         )
         self.started = False
+        self._launch_attempted = False
 
     def _build_env(self) -> dict[str, str]:
         """复刻 app 的 buildEnv：PATH 前插 python-embedded + PYTHONHOME。"""
@@ -109,10 +174,12 @@ class EmbeddedPythonLauncher:
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承，
         # 并可带 env（ShellExecute 分支不支持 env，见模块注释）
         need_uac = self.use_admin and not IS_ELEVATED
-        await self.process_manager.open_process(
+        self._launch_attempted = True
+        await launch_installation_process(
+            self.process_manager,
+            self.root_path,
             self.python_exe,
             *WHIMBOX_CLI_ARGS,
-            cwd=self.root_path,
             target_process=self.target_process,
             elevated=need_uac,
             env=None if need_uac else self._build_env(),
@@ -131,13 +198,10 @@ class EmbeddedPythonLauncher:
         return await self.process_manager.is_running()
 
     async def terminate(self) -> None:
-        """终止无头进程（进程管理器 + 兜底按路径强杀，两步独立容错）。"""
-
-        try:
-            await self.process_manager.kill()
-        except Exception as e:
-            logger.opt(exception=True).warning(f"通过进程管理器中止奇想盒失败: {e}")
-        try:
-            await process_tools.kill_process(self.python_exe)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止奇想盒后端进程失败: {e}")
+        """只有确认进程停止后，调用方才可恢复配置或重试。"""
+        if self._launch_attempted:
+            await stop_installation_processes(
+                self.process_manager, self.root_path, self.python_exe
+            )
+            self.started = False
+            self._launch_attempted = False

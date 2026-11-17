@@ -51,6 +51,7 @@ from auto_mas_core.host.utils import BASE_SOURCE_LABELS, get_logger
 from auto_mas_core.host.utils_common_config import archive as _utils_config_archive
 from auto_mas_core.host.utils_common_config import restore as _utils_config_restore
 
+from .update import installation_access
 from .upstream import WheelAssetsConfigSurface, parse_override_map
 
 logger = get_logger("奇想盒 配置恢复")
@@ -342,7 +343,9 @@ async def _preview_native(ctx: _utils_config_restore.RestoreContext, ts: str) ->
 
 
 async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
-    _surface(ctx).restore_entry(ts)
+    surface = _surface(ctx)
+    with installation_access(surface.root_path):
+        surface.restore_entry(ts)
 
 
 RESTORE_POOLS = [
