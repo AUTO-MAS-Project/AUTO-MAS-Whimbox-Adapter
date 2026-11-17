@@ -140,6 +140,7 @@ class AutoProxyTask(AutoProxyWorker):
         self.cur_user_uid = config.uid
         self._user_scripts_started = False
         self._log_progress = None
+        self._log_append_lock = asyncio.Lock()
         self._started_run = False
         # base 来源三态（共享/独立/原生）：shared/independent=把面板值写入上游 config.json
         # （运行时物化）；原生来源=用上游原生配置、MAS 零写入——除非开启覆写层
@@ -419,7 +420,6 @@ class AutoProxyTask(AutoProxyWorker):
         assert self.feed is not None and self.cur_user_log is not None
 
         self._use_incremental_log = event.log_delta is not None
-        delta: tuple[str, ...] = ()
         if event.log_delta is None:
             # 旧 feed 在首个事件前已暴露整批历史，保留其预读和全文判定契约。
             log = self.feed.log_text
@@ -431,12 +431,8 @@ class AutoProxyTask(AutoProxyWorker):
                 self._incremental_parser.reset()
                 self._incremental_parser.feed(log)
         else:
-            delta = event.log_delta[
-                max(0, self._log_consumed_lines - event.log_offset) :
-            ]
-        if delta:
             # 先确认历史消费，再推实时进展；推送抛错不会重复历史和 marker。
-            self._append_log_delta(delta, log_offset=event.log_offset)
+            await self._append_log_delta(event.log_delta, log_offset=event.log_offset)
 
         await self.script_info.set_log("".join(self.cur_user_log.info.content))
 
@@ -474,37 +470,44 @@ class AutoProxyTask(AutoProxyWorker):
 
         await self._evaluate_and_release()
 
-    def _append_log_delta(self, delta: tuple[str, ...], *, log_offset: int) -> None:
+    async def _append_log_delta(
+        self, delta: tuple[str, ...], *, log_offset: int
+    ) -> None:
         """追加尚未消费的完整日志行，同时维护历史和 marker 缓存。"""
 
         assert self.cur_user_log is not None
-
-        self._use_incremental_log = True
-        text = "".join(delta)
-        if self._incremental_parser is not None:
-            self._incremental_parser.feed(text)
-
-        # readlines 可能返回尚未换行的末段；只合并该段，保留全文 splitlines 语义。
-        content = self.cur_user_log.info.content
-        if content and not content[-1].endswith(
-            (
-                "\n",
-                "\r",
-                "\v",
-                "\f",
-                "\x1c",
-                "\x1d",
-                "\x1e",
-                "\x85",
-                "\u2028",
-                "\u2029",
+        # feed 与退出看门狗都可补消费；提交让出期间共享同一游标和 marker。
+        async with self._log_append_lock:
+            pending = delta[max(0, self._log_consumed_lines - log_offset) :]
+            if not pending:
+                return
+            raw_text = "".join(pending)
+            text = raw_text
+            content = list(self.cur_user_log.info.content)
+            # readlines 可返回未换行末段，只拼接该段，保留全文 splitlines 语义。
+            if content and not content[-1].endswith(
+                (
+                    "\n",
+                    "\r",
+                    "\v",
+                    "\f",
+                    "\x1c",
+                    "\x1d",
+                    "\x1e",
+                    "\x85",
+                    "\u2028",
+                    "\u2029",
+                )
+            ):
+                text = content.pop() + text
+            content.extend(text.splitlines(keepends=True))
+            await self.cur_user_log.set_state(content=content)
+            self._use_incremental_log = True
+            if self._incremental_parser is not None:
+                self._incremental_parser.feed(raw_text)
+            self._log_consumed_lines = max(self._log_consumed_lines, log_offset) + len(
+                pending
             )
-        ):
-            text = content.pop() + text
-        content.extend(text.splitlines(keepends=True))
-        self._log_consumed_lines = max(self._log_consumed_lines, log_offset) + len(
-            delta
-        )
 
     async def _evaluate_and_release(
         self, *, process_running: bool = True, refresh_pending: bool = False
@@ -525,7 +528,7 @@ class AutoProxyTask(AutoProxyWorker):
         if refresh_pending and isinstance(feed, LoguruFileFeed):
             delta = feed.get_log_delta(self._log_consumed_lines)
             if delta:
-                self._append_log_delta(delta, log_offset=self._log_consumed_lines)
+                await self._append_log_delta(delta, log_offset=self._log_consumed_lines)
         time_limit = self.script_config.Run.RunTimeLimit
         stalled = self.is_log_stalled(feed.latest_time, minutes=time_limit)
         if self._incremental_parser is not None and self._use_incremental_log:
@@ -563,12 +566,17 @@ class AutoProxyTask(AutoProxyWorker):
     async def _stop_monitoring(self) -> None:
         """停看门狗与日志监控（final_task / on_crash 共用，每步独立容错）。"""
 
-        if self._exit_watchdog_task is not None:
-            self._exit_watchdog_task.cancel()
-            self._exit_watchdog_task = None
-        if self.feed is not None:
-            with suppress(Exception):
-                await self.feed.stop()
+        try:
+            if self._exit_watchdog_task is not None:
+                watchdog = self._exit_watchdog_task
+                self._exit_watchdog_task = None
+                watchdog.cancel()
+                with suppress(asyncio.CancelledError):
+                    await watchdog
+        finally:
+            if self.feed is not None:
+                with suppress(Exception):
+                    await self.feed.stop()
 
     async def finish(self):
         if not self._started_run:
@@ -581,15 +589,16 @@ class AutoProxyTask(AutoProxyWorker):
             and not self.stopped_manually,
         )
 
-        # 结束时先清理监控、看门狗与进程
-        await self._stop_monitoring()
-        await self.launcher.terminate()
-
-        # 写入历史记录（对齐 General/BetterGI 行为）
-        await self._persist_user_run_result()
-        self._restore_config()
-
-        await self.run_user_scripts_after()
+        try:
+            # 先停止日志写入和进程并恢复原配置，结果提交失败也不遗留覆盖层。
+            try:
+                await self._stop_monitoring()
+            finally:
+                await self.launcher.terminate()
+                self._restore_config()
+            await self._persist_user_run_result()
+        finally:
+            await self.run_user_scripts_after()
 
         history_records = []
         for t, log_item in self.iter_logs():
@@ -754,6 +763,13 @@ class AutoProxyTask(AutoProxyWorker):
             return
         self._user_scripts_started = False
         if self.cur_user_config.Info.IfScriptAfterTask:
-            await execute_script_task(
-                self.cur_user_config.Info.ScriptAfterTask, "奇想盒账号任务后脚本"
-            )
+            try:
+                await execute_script_task(
+                    self.cur_user_config.Info.ScriptAfterTask, "奇想盒账号任务后脚本"
+                )
+            except Exception as error:
+                message = f"账号任务后脚本执行失败：{error}"
+                logger.opt(exception=True).warning(message)
+                logs = self.iter_logs()
+                if logs:
+                    await logs[-1][1].append_content(message + "\n")
