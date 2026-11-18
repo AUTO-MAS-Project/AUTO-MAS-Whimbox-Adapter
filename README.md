@@ -1,3 +1,23 @@
+<!-- auto-mas:i18n
+{
+  "display_name_i18n": {
+    "zh_CN": "奇想盒专项",
+    "en": "Whimbox Adapter",
+    "ja": "奇想盒（Whimbox）アダプター"
+  },
+  "description_i18n": {
+    "zh_CN": "无限暖暖奇想盒专项适配插件",
+    "en": "Whimbox script adapter for Infinity Nikki",
+    "ja": "インフィニティニキ向け奇想盒（Whimbox）のスクリプトアダプター"
+  },
+  "tags_i18n": {
+    "zh_CN": ["专项适配", "无限暖暖"],
+    "en": ["Script adapter", "Infinity Nikki"],
+    "ja": ["スクリプトアダプター", "インフィニティニキ"]
+  }
+}
+-->
+
 # AUTO-MAS Whimbox Adapter
 
 AUTO-MAS 的奇想盒（无限暖暖）专项插件。
