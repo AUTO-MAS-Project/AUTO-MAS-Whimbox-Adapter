@@ -23,9 +23,20 @@ python -m ruff format --check src tests
 uv build
 ```
 
-正式安装应使用发行 wheel；本地源码发现与发行包安装是两个入口。首次发行前，旧托管的自动安装迁移需要使用本地源码插件验证。
-
-首发需与包含 Whimbox 插件迁移的宿主版本配套。发布前根据实际 SDK 发行版本收紧依赖下界，
-并验证该发行包；当前开发版版本号不能证明旧版 SDK 已包含迁移需要的接口。
-
 本次迁移未改变上游游戏执行与结果判定语义。真实游戏、管理员授权和线上更新需在装有奇想盒的 Windows 环境验收。
+
+## 发布
+
+首发前将 `auto-mas-core` 的依赖下界对齐到首个包含奇想盒迁移的宿主版本。插件市场安装使用随宿主提供的 SDK 和版本元数据。独立使用 pip 安装时需要另行提供兼容的 SDK wheel。
+
+分支推送和 PR 会构建并校验 wheel 与源码包。首次上传使用 PyPI [pending Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)，配置如下。
+
+| 字段 | 值 |
+| --- | --- |
+| PyPI project name | `auto-mas-whimbox-adapter` |
+| Owner | `AUTO-MAS-Project` |
+| Repository name | `AUTO-MAS-Whimbox-Adapter` |
+| Workflow name | `publish.yml` |
+| Environment name | `pypi` |
+
+将经验证的发布提交合入 `master` 后，推送与 `pyproject.toml` 版本一致的 `v<版本>` 标签。发布任务将构建校验通过的文件上传到 PyPI。交付宿主前，用包含迁移代码的候选宿主和脱敏的旧托管配置验收。临时环境仅使用 PyPI 安装的 Adapter，验证首次启动自动安装插件，以及重启后托管、账号 UID、顺序和设置仍然保留。
