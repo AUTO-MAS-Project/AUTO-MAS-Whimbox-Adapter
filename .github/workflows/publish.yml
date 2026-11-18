@@ -40,9 +40,11 @@ jobs:
         run: python -m build
       - name: 校验包元数据
         run: python -m twine check --strict dist/*
-      - name: 校验分发包中的项目链接
+      - name: 校验分发包中的项目链接和市场展示信息
         run: |
           python - <<'PY'
+          import json
+          import re
           from email import policy
           from email.parser import BytesParser
           from pathlib import Path
@@ -58,6 +60,22 @@ jobs:
                   parsed = urlsplit(url.strip())
                   if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                       raise SystemExit(f"{label} 必须是有效的 HTTP/HTTPS 项目链接")
+
+              body = metadata.get_payload(decode=True).decode("utf-8")
+              match = re.match(r"^\s*<!--\s*auto-mas:i18n\s+(.*?)\s*-->", body, re.DOTALL)
+              if match is None:
+                  raise SystemExit("wheel 缺少插件市场多语言展示声明")
+              display = json.loads(match[1])
+              for locale in ("zh_CN", "en", "ja"):
+                  for field in ("display_name_i18n", "description_i18n"):
+                      value = display[field].get(locale)
+                      if not isinstance(value, str) or not value.strip():
+                          raise SystemExit(f"{field} 缺少 {locale} 文案")
+                  tags = display["tags_i18n"].get(locale)
+                  if not isinstance(tags, list) or not tags or not all(
+                      isinstance(tag, str) and tag.strip() for tag in tags
+                  ):
+                      raise SystemExit(f"tags_i18n 缺少 {locale} 标签")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
