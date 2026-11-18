@@ -27,7 +27,7 @@ uv build
 
 ## 发布
 
-首发前将 `auto-mas-core` 的依赖下界对齐到首个包含奇想盒迁移的宿主版本。插件市场安装使用随宿主提供的 SDK 和版本元数据。独立使用 pip 安装时需要另行提供兼容的 SDK wheel。
+与 MAA Adapter 使用相同的 SDK 依赖范围 `>=5,<6`。运行需要包含奇想盒插件迁移的宿主。插件市场安装使用随宿主提供的 SDK 和版本元数据。独立使用 pip 安装时需要另行提供兼容的 SDK wheel。
 
 分支推送和 PR 会构建并校验 wheel 与源码包。首次上传使用 PyPI [pending Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)，配置如下。
 

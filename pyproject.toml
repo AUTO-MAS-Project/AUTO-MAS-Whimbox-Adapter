@@ -11,7 +11,7 @@ requires-python = ">=3.12,<3.13"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 keywords = ["auto-mas-plugin", "auto-mas-id:whimbox_adapter"]
-dependencies = ["auto-mas-core>=5.9.0b1,<6"]
+dependencies = ["auto-mas-core>=5,<6"]
 
 [project.urls]
 Homepage = "https://auto-mas.top"
