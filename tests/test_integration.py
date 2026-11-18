@@ -1,6 +1,7 @@
 """Guard saved-account identity and the public plugin editing contract."""
 
 import json
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx
@@ -144,8 +145,8 @@ async def test_public_crud_restore_and_plugin_capabilities(
         ).json()
         assert missing["code"] == 400
         # A different managed script can share the same native config.
+        from whimbox_adapter.tools import upstream
         from whimbox_adapter.tools.update import installation_access
-        from whimbox_adapter.tools.upstream import WheelAssetsConfigSurface
 
         root = tmp_path_factory.mktemp("whimbox-install")
         other_id = scripts.add(WhimboxConfig, payload={"Info": {"RootPath": str(root)}})
@@ -156,7 +157,7 @@ async def test_public_crud_restore_and_plugin_capabilities(
             await client.post("/api/scripts/user/add", json={"scriptId": str(other_id)})
         ).json()
         assert other_user["code"] == 200, other_user
-        surface = WheelAssetsConfigSurface(root)
+        surface = upstream.WheelAssetsConfigSurface(root)
         surface.config_path.parent.mkdir()
         surface.config_path.write_bytes(b'{"before": true}')
         native = {**context, "target": "native"}
@@ -176,6 +177,26 @@ async def test_public_crud_restore_and_plugin_capabilities(
         native_result = (await client.post(prefix + "/restore", json=restore)).json()
         assert native_result["code"] == 200, native_result
         assert surface.config_path.read_bytes() == b'{"before": true}'
+        # An explicit restore can clear a pending overlay without discarding new edits.
+        monkeypatch.setattr(surface, "_read_template_only", lambda: {})
+        with installation_access(root):
+            surface.materialize_overrides({}, {}, run_all_accounts=False)
+        manual_edit = b'{"edited": true}'
+        surface.config_path.write_bytes(manual_edit)
+        stopped = AsyncMock(return_value=False)
+        monkeypatch.setattr(upstream.process_tools, "is_process_stopped", stopped)
+        blocked = (await client.post(prefix + "/restore", json=restore)).json()
+        assert blocked["code"] != 200, blocked
+        assert surface.config_path.read_bytes() == manual_edit
+        assert surface.has_pending_overlay()
+        stopped.return_value = True
+        native_result = (await client.post(prefix + "/restore", json=restore)).json()
+        assert native_result["code"] == 200, native_result
+        assert surface.config_path.read_bytes() == b'{"before": true}'
+        assert manual_edit in [
+            entry.read_bytes() for entry in surface.backup_root().glob("*/config.json")
+        ]
+        assert not surface.has_pending_overlay()
         # No built-in restore pool remains after migration.
         assert (await client.get("/api/scripts/backup/list", params=context)).json()[
             "code"

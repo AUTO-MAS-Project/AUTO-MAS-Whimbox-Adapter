@@ -38,7 +38,7 @@
 ``change_account``（``auto_close_game`` 由适配层恒置 true，没有页面字段）。
 仅由 MAS 自己消费的执行域字段（前后置脚本、通知、剩余天数）不进备份。
 
-归档时机：运行期快照与还原见 ``tools/upstream.py``（``snapshot_pre_run`` /
+归档时机：运行期快照与还原见 ``tools/upstream.py``（``snapshot_entry`` /
 ``ScriptConfig`` 会话进出）；编辑界面进入（native）/ 退出（mas）由前端
 ``ensure`` 触发。
 """
@@ -345,7 +345,7 @@ async def _preview_native(ctx: _utils_config_restore.RestoreContext, ts: str) ->
 async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     surface = _surface(ctx)
     with installation_access(surface.root_path):
-        surface.restore_entry(ts)
+        await surface.restore_entry(ts)
 
 
 RESTORE_POOLS = [

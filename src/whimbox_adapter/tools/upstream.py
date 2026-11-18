@@ -40,10 +40,14 @@ from __future__ import annotations
 
 import json
 import re
+from base64 import b64decode, b64encode
+from hashlib import sha256
 from pathlib import Path
 
+from auto_mas_core.host.services import script_install
 from auto_mas_core.host.utils import get_logger
 from auto_mas_core.host.utils import io as _utils_io
+from auto_mas_core.host.utils import process as process_tools
 from auto_mas_core.host.utils_common_config import archive as _utils_config_archive
 
 from whimbox_adapter.contracts import (
@@ -178,6 +182,7 @@ class WheelAssetsConfigSurface:
         self.root_path = Path(root_path)
         self.assets_dir = self.root_path / REL_SITE_PACKAGES / REL_ASSETS_DIR
         self.config_path = self.root_path / REL_CONFIG_FILE
+        self._overlay_journal = self.config_path.with_name(".mas-overlay-recovery")
         # 目录缓存：同一实例内重复读取命中（三件套共几十 KB）；surface 由调用方
         # 逐次新建（API 每次请求、每账号轮次），跨请求不共享此缓存
         self._catalog_cache: tuple[tuple, WhimboxCatalog] | None = None
@@ -403,6 +408,8 @@ class WheelAssetsConfigSurface:
             run_all_accounts: 物化为上游 OneDragon.change_account。
         """
 
+        if self.has_pending_overlay():
+            raise script_install.InstallUnsafeError("奇想盒上次运行的原生配置尚未恢复")
         template = self._read_template_only()
         if template is None:
             raise RuntimeError("奇想盒配置模板不可读，请先完整运行一次奇想盒 app")
@@ -440,12 +447,20 @@ class WheelAssetsConfigSurface:
                 True,
             )
 
-        # 原子写走通用原语（fsync + 进程内写锁 + 失败清残留）；序列化保持上游的
-        # indent=4，避免把用户的上游配置文件整篇重排
-        _write_config_or_hint(
-            self.config_path,
-            json.dumps(config, ensure_ascii=False, indent=4).encode("utf-8"),
+        # 恢复记录先落盘，避免异常退出后把临时覆盖误当作原生配置。
+        original = self._read_config_bytes()
+        overlay = json.dumps(config, ensure_ascii=False, indent=4).encode("utf-8")
+        _utils_io.write_file(
+            self._overlay_journal,
+            {
+                "original": b64encode(original).decode("ascii")
+                if original is not None
+                else None,
+                "overlay_digest": sha256(overlay).hexdigest(),
+            },
+            format=".json",
         )
+        _write_config_or_hint(self.config_path, overlay)
         logger.info(
             f"已物化奇想盒一条龙配置: {len(tasks or {})} 个步骤开关, "
             f"{len(options or {})} 个参数覆盖"
@@ -464,23 +479,7 @@ class WheelAssetsConfigSurface:
             / _utils_config_archive.config_root_key(self.config_path)
         )
 
-    def snapshot_pre_run(self) -> str | None:
-        """运行前强制归档 config.json。
-
-        Returns:
-            归档锚点时间戳；指纹与最近一份相同（未新建目录）时返回最新条目；
-            config.json 本不存在返回 None（还原阶段按会话期新建清理）。
-        """
-
-        if not self.config_file_exists():
-            return None
-        created = self.archive_config()
-        if created is not None:
-            return created
-        times = _utils_config_archive.list_times(self.backup_root())
-        return times[0] if times else None
-
-    def archive_config(self, force: bool = False) -> str | None:
+    def snapshot_entry(self, force: bool = False) -> str | None:
         """归档当前 config.json；返回新条目时间戳，指纹去重命中返回 None。"""
 
         if not self.config_file_exists():
@@ -490,27 +489,57 @@ class WheelAssetsConfigSurface:
         )
         return dest.name if dest is not None else None
 
-    def restore_pre_run(self, ts: str | None) -> None:
-        """还原运行前归档条目；ts=None 表示运行前无 config.json，删除会话期新建文件。"""
+    def _read_config_bytes(self) -> bytes | None:
+        try:
+            return self.config_path.read_bytes()
+        except FileNotFoundError:
+            return None
 
-        if ts is None:
-            try:
-                self.config_path.unlink(missing_ok=True)
-            except OSError as e:
-                # 删不掉不阻断收口，但不能谎报成功（文件还在，下次运行会读到它）
-                logger.warning(f"删除会话期新建的奇想盒 config.json 失败: {e}")
-                return
-            logger.info("奇想盒 config.json 为会话期新建，已按运行前状态删除")
+    def has_pending_overlay(self) -> bool:
+        """同一安装的恢复记录独立于用户备份池和 MAS 的运行进程。"""
+        return self._overlay_journal.exists()
+
+    async def _assert_overlay_writer_stopped(self) -> None:
+        for executable in (APP_EXE_NAME, REL_PYTHON_EXE):
+            if not await process_tools.is_process_stopped(self.root_path / executable):
+                raise script_install.InstallUnsafeError(
+                    "奇想盒原生配置待恢复，请关闭奇想盒后重试"
+                )
+
+    async def restore_pending_overlay(self, *, finishing_run: bool = False) -> None:
+        """持安装锁恢复原配置。自动重试时保留本轮结束后保存的新修改。"""
+        if not self.has_pending_overlay():
             return
-
-        backup_dir = _utils_config_archive.get_backup_dir(self.backup_root(), ts)
-        if backup_dir is None:
-            raise ValueError(f"奇想盒配置备份不存在: {ts}")
-        src = backup_dir / self.config_path.name
-        if not src.is_file():
-            raise ValueError(f"奇想盒配置备份缺文件: {src}")
-        _write_config_or_hint(self.config_path, src.read_bytes())
-        logger.info(f"已还原奇想盒 config.json（运行前归档 {ts}）")
+        await self._assert_overlay_writer_stopped()
+        try:
+            state = _utils_io.read_dict_file(self._overlay_journal, format=".json")
+            encoded = state["original"]
+            original = None if encoded is None else b64decode(encoded, validate=True)
+            current = self._read_config_bytes()
+            if current != original:
+                current_digest = (
+                    None if current is None else sha256(current).hexdigest()
+                )
+                if state["overlay_digest"] != current_digest:
+                    if not finishing_run:
+                        raise script_install.InstallUnsafeError(
+                            "奇想盒原生配置已有新修改，请在配置恢复中选取备份后重试"
+                        )
+                    # 奇想盒可在本轮改写配置，记下退出时的版本供下次重试比对。
+                    state["overlay_digest"] = current_digest
+                    _utils_io.write_file(self._overlay_journal, state, format=".json")
+                if original is None:
+                    self.config_path.unlink(missing_ok=True)
+                else:
+                    atomic_write(self.config_path, original)
+            self._overlay_journal.unlink()
+        except script_install.InstallUnsafeError:
+            raise
+        except Exception as error:
+            raise script_install.InstallUnsafeError(
+                f"奇想盒原生配置恢复失败，已保留恢复记录。请检查文件占用及写入权限后重试：{error}"
+            ) from error
+        logger.info("已还原奇想盒运行前的原生配置")
 
     # ── 恢复池用的同族函数（供 tools/restore_service.py 复用同池原语） ──
 
@@ -522,13 +551,16 @@ class WheelAssetsConfigSurface:
             raise ValueError(f"奇想盒配置备份不存在: {ts}")
         return _utils_config_archive.dir_files(backup_dir)
 
-    def snapshot_entry(self, force: bool = False) -> str | None:
-        """归档当前 config.json（恢复池 snapshot 用；force=True 恢复前存底）。"""
-
-        return self.archive_config(force=force)
-
-    def restore_entry(self, ts: str) -> None:
+    async def restore_entry(self, ts: str) -> None:
         """恢复池 restore 用：先 force 存底再还原（通用组件覆盖前强制归档语义）。"""
 
+        pending = self.has_pending_overlay()
+        if pending:
+            await self._assert_overlay_writer_stopped()
         self.snapshot_entry(force=True)
-        self.restore_pre_run(ts)
+        src = self.backup_dir_files(ts).get(self.config_path.name)
+        if src is None:
+            raise ValueError(f"奇想盒配置备份缺文件: {ts}/{self.config_path.name}")
+        _write_config_or_hint(self.config_path, src.read_bytes())
+        if pending:
+            self._overlay_journal.unlink()

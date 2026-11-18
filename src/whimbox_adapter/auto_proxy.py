@@ -180,10 +180,6 @@ class AutoProxyTask(AutoProxyWorker):
         self.last_verdict_status: str | None = None
         # 上一轮失败的判定文案（含上游原因），用于「同一原因不重复重试」
         self._last_failure_reason: str | None = None
-        # 运行前归档锚点（None=运行前无 config.json，还原时删除会话期新建）
-        self._pre_run_archive_ts: str | None = None
-        # 本轮是否接管了上游配置（原生来源+关闭时不物化也不还原，上游自行迁移）
-        self._config_took_over = False
         # 实时进展已推送的行数（避免重复转述）
         self._dispatch_pushed_lines = 0
         self._log_consumed_lines: int = 0
@@ -237,9 +233,7 @@ class AutoProxyTask(AutoProxyWorker):
         行为，不予还原；原生态开启覆写层则任务前物化、结束还原（overlay）。
         """
 
-        # 运行前强制归档（覆盖性物化前；失败即任务失败，不留无快照的覆写）
-        self._pre_run_archive_ts = self.config_surface.snapshot_pre_run()
-        self._config_took_over = self.use_mas_config
+        self.config_surface.snapshot_entry()
         if not self.use_mas_config:
             return
         tasks = parse_override_map(self.cur_user_config.Task.Tasks)
@@ -249,17 +243,6 @@ class AutoProxyTask(AutoProxyWorker):
             options,
             run_all_accounts=bool(self.cur_user_config.OneDragon.IfRunAllAccounts),
         )
-
-    def _restore_config(self) -> None:
-        """还原运行前归档条目（final_task / on_crash 共用，幂等）。"""
-
-        if self._config_took_over:
-            try:
-                self.config_surface.restore_pre_run(self._pre_run_archive_ts)
-            except Exception as e:
-                logger.opt(exception=True).warning(f"还原奇想盒 config.json 失败: {e}")
-        self._pre_run_archive_ts = None
-        self._config_took_over = False
 
     async def main_logic(self) -> None:
         """在账号锁内检查准入并执行整轮代理，超时仍走同一恢复收尾。"""
@@ -605,18 +588,21 @@ class AutoProxyTask(AutoProxyWorker):
             and not self.stopped_manually,
         )
 
-        stopped = False
+        cleanup_complete = False
         try:
             # 先停止日志写入和进程并恢复原配置，结果提交失败也不遗留覆盖层。
             try:
                 await self._stop_monitoring()
             finally:
                 await self.launcher.terminate()
-                stopped = True
-                self._restore_config()
+                if self.use_mas_config:
+                    await self.config_surface.restore_pending_overlay(
+                        finishing_run=True
+                    )
+                cleanup_complete = True
             await self._persist_user_run_result()
         finally:
-            if stopped:
+            if cleanup_complete:
                 await self.run_user_scripts_after()
 
         history_records = []

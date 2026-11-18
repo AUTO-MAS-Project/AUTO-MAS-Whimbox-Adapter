@@ -198,17 +198,12 @@ class IUpstreamConfigSurface(Protocol):
         """把账号覆盖集按当前模板键集过滤后原子合并写入上游 config.json。"""
         ...
 
-    def snapshot_pre_run(self) -> str | None:
-        """运行前强制归档上游 config.json；返回归档时间戳。
-
-        Returns:
-            归档条目时间戳；指纹与最近一份相同时返回其时间戳；文件本不存在
-            返回 None（还原阶段按「会话期新建」清理）。
-        """
+    def snapshot_entry(self, force: bool = False) -> str | None:
+        """归档当前原生配置，返回新归档的时间戳。"""
         ...
 
-    def restore_pre_run(self, ts: str | None) -> None:
-        """结束后还原运行前归档条目；ts=None 且运行前无文件时删除新建文件。"""
+    async def restore_pending_overlay(self, *, finishing_run: bool = False) -> None:
+        """恢复运行前的原生配置，失败时保留恢复记录。"""
         ...
 
 

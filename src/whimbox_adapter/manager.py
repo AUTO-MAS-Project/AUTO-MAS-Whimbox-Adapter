@@ -41,7 +41,7 @@ from .tools.update import (
     installation_access,
     pending_marker,
 )
-from .tools.upstream import APP_EXE_NAME
+from .tools.upstream import APP_EXE_NAME, WheelAssetsConfigSurface
 
 logger = get_logger("奇想盒 调度器")
 
@@ -93,6 +93,7 @@ class WhimboxManager(UserExpander):
         """在托管锁内完成安装恢复与更新，资源访问保持到所有用户恢复结束。"""
         root = Path(self.script_config.Info.RootPath)
         self._resources.enter_context(installation_access(root))
+        await WheelAssetsConfigSurface(root).restore_pending_overlay()
         if self.task_info.mode == TaskMode.AUTO_PROXY:
             token = prefetch_paths.set(self.context.params.get("prefetch_paths", {}))
             try:
@@ -209,7 +210,10 @@ class WhimboxManager(UserExpander):
 
     def build_worker(self, user, config):
         """按插件声明的真实模式派发已锁用户。"""
-        script_install.assert_no_pending_process(self.script_config.Info.RootPath)
+        root = self.script_config.Info.RootPath
+        script_install.assert_no_pending_process(root)
+        if WheelAssetsConfigSurface(root).has_pending_overlay():
+            raise script_install.InstallUnsafeError("奇想盒上次运行的原生配置尚未恢复")
         if self.task_info.mode == TaskMode.AUTO_PROXY:
             return AutoProxyTask(self, user, config)
         if self.task_info.mode == TaskMode.SCRIPT_CONFIG:

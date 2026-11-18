@@ -113,14 +113,13 @@ async def test_proxy_result_or_cancel_restores_before_releasing_user_lock(
         def check_install(self):
             return None
 
-        def snapshot_pre_run(self):
-            return "before"
+        def snapshot_entry(self):
+            pass
 
         def materialize_overrides(self, *args, **kwargs):
             path.write_text('{"overlay":true}')
 
-        def restore_pre_run(self, anchor):
-            assert anchor == "before"
+        async def restore_pending_overlay(self, *, finishing_run=False):
             restored.append(config.is_locked)
             path.write_text(original)
 
@@ -366,3 +365,126 @@ async def test_native_gui_start_failure_remains_failure(tmp_path_factory, monkey
     assert isinstance(worker.error, OSError)
     assert user.info.status == "异常"
     worker._kill_processes.assert_awaited_once()
+
+
+@pytest.mark.parametrize("had_original", [True, False])
+async def test_failed_restore_blocks_reuse_until_recovered(
+    tmp_path_factory, monkeypatch, had_original
+):
+    from whimbox_adapter import manager
+    from whimbox_adapter.tools import upstream
+
+    root = tmp_path_factory.mktemp("whimbox-install")
+    expander, user, config = await runtime(root)
+    surface = upstream.WheelAssetsConfigSurface(root)
+    path = surface.config_path
+    baseline = b'{ "OneDragon": {"auto_close_game": {"value": "false"}} }\r\n'
+    path.parent.mkdir()
+    if had_original:
+        path.write_bytes(baseline)
+    monkeypatch.setattr(surface, "check_install", lambda: None)
+    monkeypatch.setattr(surface, "_read_template_only", lambda: json.loads(baseline))
+    monkeypatch.setattr(
+        upstream.process_tools, "is_process_stopped", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        manager, "Notify", SimpleNamespace(push_proxy_result=AsyncMock())
+    )
+    monkeypatch.setattr(expander, "_prepare_update", AsyncMock())
+
+    log_text = "一条龙任务完成: 任务结果如下：\n✅ daily\n任务结束，程序退出\n"
+
+    def feed_factory(callback):
+        async def start(_started):
+            await callback(WhimboxRunEvent(text=log_text))
+
+        return SimpleNamespace(
+            start=start, stop=AsyncMock(), latest_time=datetime.now(), log_text=log_text
+        )
+
+    # Simulate a config file that cannot be replaced or deleted after the process exits.
+    locked = False
+
+    async def terminate():
+        nonlocal locked
+        # The upstream process can change the overlay during a normal run.
+        current = json.loads(path.read_bytes())
+        current["RunState"] = {"written_by_whimbox": True}
+        path.write_text(json.dumps(current), encoding="utf-8")
+        locked = True
+
+    original_write = upstream.atomic_write
+    original_unlink = type(path).unlink
+
+    def write(target, content):
+        if target == path and locked:
+            raise PermissionError("config file is locked")
+        original_write(target, content)
+
+    def unlink(target, *args, **kwargs):
+        if target == path and locked:
+            raise PermissionError("config file is locked")
+        original_unlink(target, *args, **kwargs)
+
+    monkeypatch.setattr(upstream, "atomic_write", write)
+    monkeypatch.setattr(type(path), "unlink", unlink)
+    worker = AutoProxyTask(
+        expander,
+        user,
+        config,
+        config_surface=surface,
+        launcher=SimpleNamespace(
+            spawn=AsyncMock(),
+            terminate=terminate,
+            is_running=AsyncMock(return_value=True),
+        ),
+        feed_factory=feed_factory,
+    )
+    monkeypatch.setattr(worker, "run_user_scripts_after", AsyncMock())
+    monkeypatch.setattr(manager, "AutoProxyTask", lambda *_: worker)
+
+    await asyncio.wait_for(expander.run(), 8)
+    assert user.info.status == "异常"
+    assert config.Data.ProxyTimes == 0
+    worker.run_user_scripts_after.assert_not_awaited()
+    assert (
+        json.loads(path.read_bytes())["OneDragon"]["auto_close_game"]["value"] == "true"
+    )
+    with pytest.raises(script_install.InstallUnsafeError):
+        expander.build_worker(user, config)
+
+    # A newly created manager must use recovery data from disk.
+    retry = WhimboxManager(expander.script_info, expander.script_config)
+    monkeypatch.setattr(retry, "_prepare_update", AsyncMock())
+    try:
+        with pytest.raises(script_install.InstallUnsafeError):
+            await retry.prepare()
+        retry._prepare_update.assert_not_awaited()
+    finally:
+        await retry.finish()
+
+    locked = False
+    last_overlay = path.read_bytes()
+    manual_edit = b'{"changed": true}'
+    path.write_bytes(manual_edit)
+    retry = WhimboxManager(expander.script_info, expander.script_config)
+    try:
+        with pytest.raises(script_install.InstallUnsafeError):
+            await retry.prepare()
+        assert path.read_bytes() == manual_edit
+    finally:
+        await retry.finish()
+
+    path.write_bytes(last_overlay)
+    next_run = WhimboxManager(expander.script_info, expander.script_config)
+    monkeypatch.setattr(next_run, "_prepare_update", AsyncMock())
+    try:
+        await next_run.prepare()
+        next_run._prepare_update.assert_awaited_once()
+        if had_original:
+            assert path.read_bytes() == baseline
+        else:
+            assert not path.exists()
+        assert not surface.has_pending_overlay()
+    finally:
+        await next_run.finish()
