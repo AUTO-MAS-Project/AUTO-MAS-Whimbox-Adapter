@@ -10,10 +10,13 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
+authors = [{ name = "AUTO-MAS Team" }]
 keywords = ["auto-mas-plugin", "auto-mas-id:whimbox_adapter"]
 dependencies = ["auto-mas-core>=5,<6"]
 
 [project.urls]
+Changelog = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter/blob/master/CHANGELOG.md"
+Documentation = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter/blob/master/README.md"
 Homepage = "https://auto-mas.top"
 Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter"
 Issues = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter/issues"

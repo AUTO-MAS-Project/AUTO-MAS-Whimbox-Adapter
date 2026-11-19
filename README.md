@@ -47,6 +47,8 @@ uv build
 
 ## 发布
 
+发行记录见 [CHANGELOG.md](CHANGELOG.md)。发包前将本版说明移入对应版本的小节，使用 `## [版本] - YYYY-MM-DD` 作为标题。插件市场按 PyPI 发行版本收录更新日志。
+
 与 MAA Adapter 使用相同的 SDK 依赖范围 `>=5,<6`。运行需要包含奇想盒插件迁移的宿主。插件市场安装使用随宿主提供的 SDK 和版本元数据。独立使用 pip 安装时需要另行提供兼容的 SDK wheel。
 
 分支推送和 PR 会构建并校验 wheel 与源码包。首次上传使用 PyPI [pending Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)，配置如下。
