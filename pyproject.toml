@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "auto-mas-whimbox-adapter"
-version = "0.1.1"
+version = "0.1.2"
 description = "Whimbox specialized script adapter for AUTO-MAS"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -12,7 +12,7 @@ license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "AUTO-MAS Team" }]
 keywords = ["auto-mas-plugin", "auto-mas-id:whimbox_adapter"]
-dependencies = ["auto-mas-core>=5,<6"]
+dependencies = ["auto-mas-core>=5.9.0b2,<6"]
 
 [project.urls]
 Changelog = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter/blob/master/CHANGELOG.md"

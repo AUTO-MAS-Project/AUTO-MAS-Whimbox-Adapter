@@ -7,7 +7,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Annotated, Literal
 
-from auto_mas_core import ScriptEntry, UserEntry
+from auto_mas_core import DesktopSessionRunFields, ScriptEntry, UserEntry
 from auto_mas_core.host.config import (
     ConfigCollection,
     ConfigGroup,
@@ -211,7 +211,7 @@ class WhimboxConfig(ScriptEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",

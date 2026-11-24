@@ -2,7 +2,11 @@
 
 import asyncio
 import json
+import os
+import shutil
+import subprocess
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -488,3 +492,36 @@ async def test_failed_restore_blocks_reuse_until_recovered(
         assert not surface.has_pending_overlay()
     finally:
         await next_run.finish()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows desktop process scope")
+@pytest.mark.asyncio
+async def test_desktop_cleanup_preserves_another_process_using_the_installation(
+    tmp_path,
+):
+    from app.utils.common.process.session import (
+        DesktopProcessTarget,
+        desktop_process_target,
+    )
+
+    from whimbox_adapter.tools import launcher
+
+    exe = tmp_path / launcher.REL_PYTHON_EXE
+    exe.parent.mkdir(parents=True)
+    shutil.copy2(Path(os.environ["SystemRoot"]) / "System32/ping.exe", exe)
+    process = subprocess.Popen(
+        [exe, "-t", "127.0.0.1"],
+        stdout=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    token = desktop_process_target.set(DesktopProcessTarget(99, tmp_path, tmp_path))
+    try:
+        assert process.pid in launcher.find_upstream_pids(tmp_path)
+        manager = AsyncMock()
+        with pytest.raises(launcher.ProcessCleanupUnconfirmed):
+            await launcher.stop_installation_processes(manager, tmp_path, exe)
+        assert process.poll() is None
+    finally:
+        desktop_process_target.reset(token)
+        process.kill()
+        await asyncio.to_thread(process.wait, 5)

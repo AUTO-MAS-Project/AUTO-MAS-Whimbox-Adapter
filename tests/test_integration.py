@@ -10,6 +10,7 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config, Plugin
 from app.core.config.upgrade import convert_legacy
 from app.models.config import PluginRecord
+from app.plugin.calls import CallGate
 from app.plugin.openapi import bind_openapi
 from app.plugin.types import PluginState
 from app.utils import io
@@ -45,6 +46,7 @@ async def test_legacy_accounts_survive_save_and_reload(tmp_path, legacy_children
         },
     }
     if legacy_children:
+        payload["data"][sid]["Run"] = {"ExecutionSession": "desktop"}
         script = payload["data"][sid]
         users = script.pop("UserData")
         script["SubConfigsInfo"] = {
@@ -60,16 +62,23 @@ async def test_legacy_accounts_survive_save_and_reload(tmp_path, legacy_children
     io.write_file(path, payload)
     config_manager.register_root(scripts, path)
     await scripts.activate()
+    expected = "desktop" if legacy_children else "main"
+    assert scripts[sid].Run.ExecutionSession == expected
+    scripts[sid].Info.Name = "已保存托管"
+    await scripts[sid].commit()
     await config_manager.flush()
     assert [str(uid) for uid in scripts[sid].users.keys()] == [first, second]
     assert scripts[sid].users[first].Task.Tasks == '{"daily":true}'
-    assert scripts[sid].info.name == "原托管"
+    assert scripts[sid].info.name == "已保存托管"
     config_manager.unregister_root(scripts)
     restored = ConfigCollection.build([WhimboxConfig])
     config_manager.register_root(restored, path)
     await restored.activate()
     assert [str(uid) for uid in restored[sid].users.keys()] == [first, second]
     assert restored[sid].users[second].info.name == second
+    assert restored[sid].Run.ExecutionSession == (
+        "desktop" if legacy_children else "main"
+    )
 
 
 @pytest.mark.asyncio
@@ -86,6 +95,7 @@ async def test_public_crud_restore_and_plugin_capabilities(
     record._plugin_cls = Adapter
     monkeypatch.setattr(Plugin, "script_types", {record.uid: Adapter.decl})
     monkeypatch.setattr(Plugin, "list_plugins", lambda: [record])
+    monkeypatch.setitem(Plugin._calls, record.uid, CallGate())
     await Adapter().pre_enable()
     from app.api import scripts_router
 
@@ -106,6 +116,24 @@ async def test_public_crud_restore_and_plugin_capabilities(
         ).json()
         assert created["code"] == 200, created
         sid = created["scriptId"]
+        for elevated, expected in [(False, "admin_required"), (True, None)]:
+            monkeypatch.setattr("app.utils.IS_ELEVATED", elevated)
+            details = (
+                await client.post("/api/scripts/get", json={"scriptId": sid})
+            ).json()
+            assert details["index"][0]["desktopSessionReason"] == expected
+            assert details["index"][0]["desktopSessionSupported"] is elevated
+        updated = (
+            await client.post(
+                "/api/scripts/update",
+                json={
+                    "scriptId": sid,
+                    "data": {"Run": {"ExecutionSession": "desktop"}},
+                },
+            )
+        ).json()
+        assert updated["code"] == 200, updated
+        assert scripts[sid].Run.ExecutionSession == "desktop"
         added = (
             await client.post("/api/scripts/user/add", json={"scriptId": sid})
         ).json()

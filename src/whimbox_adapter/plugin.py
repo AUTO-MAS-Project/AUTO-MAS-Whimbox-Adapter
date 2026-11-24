@@ -22,6 +22,9 @@ class Plugin(ScriptAdapterPlugin):
         expander_class=WhimboxManager,
         supported_modes=(TaskMode.AUTO_PROXY, TaskMode.SCRIPT_CONFIG),
         prefetch_check=check_prefetch,
+        desktop_session_check=lambda config, elevated: (
+            None if elevated else "admin_required"
+        ),
         activity_game="infinitynikki",
     )
 

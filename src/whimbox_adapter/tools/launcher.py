@@ -39,6 +39,7 @@ import os
 from pathlib import Path
 
 import psutil
+from auto_mas_core.adapters.script import in_desktop_session
 from auto_mas_core.host.services import script_install
 from auto_mas_core.host.utils import (
     IS_ELEVATED,
@@ -65,7 +66,7 @@ async def launch_installation_process(
     root: Path,
     program: Path,
     *args: str,
-    target_process: ProcessInfo,
+    target_process: ProcessInfo | None,
     elevated: bool,
     env: dict[str, str] | None = None,
 ) -> None:
@@ -77,6 +78,7 @@ async def launch_installation_process(
             cwd=root,
             target_process=target_process,
             elevated=elevated,
+            retain_desktop_descendants=in_desktop_session(),
             env=env,
         )
     except (Exception, asyncio.CancelledError) as error:
@@ -95,6 +97,17 @@ async def stop_installation_processes(
     script_install.assert_no_pending_process(root)
     stopped = True
     try:
+        if in_desktop_session():
+            # 分身启动句柄持有本次任务进程树；同路径的外部进程仅参与占用核验。
+            await manager.kill()
+            for executable in executables:
+                if not await process_tools.is_process_stopped(
+                    executable, all_sessions=True
+                ):
+                    raise ProcessCleanupUnconfirmed(
+                        "安装目录仍有进程运行，请关闭奇想盒后重启 MAS"
+                    )
+            return
         for executable in executables:
             try:
                 if not await process_tools.kill_process(executable):
@@ -131,7 +144,10 @@ def find_upstream_pids(root_path: Path) -> list[int]:
     python_exe = Path(root_path) / REL_PYTHON_EXE
     for process in psutil.process_iter(["name", "exe"]):
         try:
-            if process.info["name"] == APP_EXE_NAME:
+            if process.info["name"] == APP_EXE_NAME and (
+                not process.info["exe"]
+                or Path(process.info["exe"]) == root_path / APP_EXE_NAME
+            ):
                 pids.append(process.pid)
                 continue
             exe = process.info["exe"]
@@ -180,7 +196,7 @@ class EmbeddedPythonLauncher:
             self.root_path,
             self.python_exe,
             *WHIMBOX_CLI_ARGS,
-            target_process=self.target_process,
+            target_process=None if in_desktop_session() else self.target_process,
             elevated=need_uac,
             env=None if need_uac else self._build_env(),
         )
