@@ -7,7 +7,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Annotated, Literal
 
-from auto_mas_core import DesktopSessionRunFields, ScriptEntry, UserEntry
+from auto_mas_core import ScriptEntry, UserEntry
 from auto_mas_core.host.config import (
     ConfigCollection,
     ConfigGroup,
@@ -33,6 +33,8 @@ from auto_mas_core.host.models_config_shared import (
 )
 from auto_mas_core.host.utils import constants as _utils_constants
 from pydantic import Field
+
+from .desktop_session import DesktopSessionRunFields
 
 
 class WhimboxUserConfig(UserEntry):

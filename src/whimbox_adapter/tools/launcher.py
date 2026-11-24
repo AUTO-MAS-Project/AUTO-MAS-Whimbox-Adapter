@@ -39,7 +39,6 @@ import os
 from pathlib import Path
 
 import psutil
-from auto_mas_core.adapters.script import in_desktop_session
 from auto_mas_core.host.services import script_install
 from auto_mas_core.host.utils import (
     IS_ELEVATED,
@@ -53,6 +52,7 @@ from auto_mas_core.host.utils_common_process_runner import (
     is_process_cleanup_unconfirmed,
 )
 
+from whimbox_adapter.desktop_session import in_desktop_session
 from whimbox_adapter.tools.upstream import APP_EXE_NAME, REL_PYTHON_EXE
 
 logger = get_logger("奇想盒 进程启动")
@@ -78,7 +78,7 @@ async def launch_installation_process(
             cwd=root,
             target_process=target_process,
             elevated=elevated,
-            retain_desktop_descendants=in_desktop_session(),
+            **({"retain_desktop_descendants": True} if in_desktop_session() else {}),
             env=env,
         )
     except (Exception, asyncio.CancelledError) as error:
@@ -211,6 +211,12 @@ class EmbeddedPythonLauncher:
 
         if not self.started:
             return False
+        if in_desktop_session():
+            desktop = self.process_manager.desktop_process
+            if desktop is None:
+                return False
+            # 游戏仍在 Job 内时，后端的退出码已可独立读取；running 同时传播执行器故障。
+            return desktop.running and desktop.returncode is None
         return await self.process_manager.is_running()
 
     async def terminate(self) -> None:

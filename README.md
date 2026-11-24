@@ -49,7 +49,7 @@ uv build
 
 发行记录见 [CHANGELOG.md](CHANGELOG.md)。发包前将本版说明移入对应版本的小节，使用 `## [版本] - YYYY-MM-DD` 作为标题。插件市场按 PyPI 发行版本收录更新日志。
 
-桌面分身需要提供能力声明与共享会话字段的 SDK（`>=5.9.0b2,<6`）。运行需要包含奇想盒插件迁移的宿主。插件市场安装使用随宿主提供的 SDK 和版本元数据。独立使用 pip 安装时需要另行提供兼容的 SDK wheel。
+适配器支持 SDK `>=5.9.0b1,<6`。提供分身能力接口的宿主支持桌面分身；同号旧宿主使用主会话，并保留已保存的会话选择。运行需要包含奇想盒插件迁移的宿主。插件市场安装使用随宿主提供的 SDK 和版本元数据。独立使用 pip 安装时需要另行提供兼容的 SDK wheel。
 
 分支推送和 PR 会构建并校验 wheel 与源码包。首次上传使用 PyPI [pending Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)，配置如下。
 

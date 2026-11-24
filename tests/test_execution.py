@@ -525,3 +525,35 @@ async def test_desktop_cleanup_preserves_another_process_using_the_installation(
         desktop_process_target.reset(token)
         process.kill()
         await asyncio.to_thread(process.wait, 5)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows desktop process scope")
+@pytest.mark.asyncio
+async def test_backend_exit_is_visible_while_game_is_still_retained(
+    tmp_path, monkeypatch
+):
+    from app.utils.common.process.session import (
+        DesktopProcessTarget,
+        desktop_process_target,
+    )
+
+    from whimbox_adapter.tools.launcher import EmbeddedPythonLauncher
+
+    launcher = EmbeddedPythonLauncher(tmp_path, use_admin=False)
+    desktop = SimpleNamespace(
+        running=True, returncode=None, owned=True, stop=AsyncMock()
+    )
+    monkeypatch.setattr(
+        "app.utils.windows.desktop_session.process_runner.launch_desktop_process",
+        AsyncMock(return_value=desktop),
+    )
+    token = desktop_process_target.set(DesktopProcessTarget(7, tmp_path, tmp_path))
+    try:
+        await launcher.spawn()
+        assert await launcher.is_running()
+        desktop.returncode = 1
+        assert not await launcher.is_running()
+        await launcher.terminate()
+        desktop.stop.assert_awaited()
+    finally:
+        desktop_process_target.reset(token)

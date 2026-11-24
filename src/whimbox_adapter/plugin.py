@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from .api import router as task_router
 from .backup_api import router as backup_router
 from .config import WhimboxConfig, WhimboxUserConfig
+from .desktop_session import desktop_session_check
 from .manager import WhimboxManager, check_prefetch
 
 router = APIRouter()
@@ -22,8 +23,10 @@ class Plugin(ScriptAdapterPlugin):
         expander_class=WhimboxManager,
         supported_modes=(TaskMode.AUTO_PROXY, TaskMode.SCRIPT_CONFIG),
         prefetch_check=check_prefetch,
-        desktop_session_check=lambda config, elevated: (
-            None if elevated else "admin_required"
+        **(
+            {"desktop_session_check": desktop_session_check}
+            if hasattr(ScriptTypeDecl, "desktop_session_check")
+            else {}
         ),
         activity_game="infinitynikki",
     )

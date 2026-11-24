@@ -12,7 +12,7 @@ license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "AUTO-MAS Team" }]
 keywords = ["auto-mas-plugin", "auto-mas-id:whimbox_adapter"]
-dependencies = ["auto-mas-core>=5.9.0b2,<6"]
+dependencies = ["auto-mas-core>=5.9.0b1,<6"]
 
 [project.urls]
 Changelog = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter/blob/master/CHANGELOG.md"
