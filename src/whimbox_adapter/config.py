@@ -34,6 +34,8 @@ from auto_mas_core.host.models_config_shared import (
 from auto_mas_core.host.utils import constants as _utils_constants
 from pydantic import Field
 
+from .desktop_session import DesktopSessionRunFields
+
 
 class WhimboxUserConfig(UserEntry):
     """奇想盒账号配置（无限暖暖，一条龙配置档）
@@ -211,7 +213,7 @@ class WhimboxConfig(ScriptEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
