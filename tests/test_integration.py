@@ -225,10 +225,9 @@ async def test_public_crud_restore_and_plugin_capabilities(
             entry.read_bytes() for entry in surface.backup_root().glob("*/config.json")
         ]
         assert not surface.has_pending_overlay()
-        # No built-in restore pool remains after migration.
-        assert (await client.get("/api/scripts/backup/list", params=context)).json()[
-            "code"
-        ] != 200
+        # 宿主编辑器与旧插件接口读取同一批备份。
+        backups = (await client.get("/api/scripts/backup/list", params=context)).json()
+        assert backups["code"] == 200 and backups["data"]
         schema = app.openapi()["components"]["schemas"]
         assert "WhimboxConfig" in schema and "WhimboxUserConfig" in schema
         assert Adapter.decl.activity_game == "infinitynikki"

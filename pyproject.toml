@@ -25,7 +25,7 @@ Issues = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter/issues"
 where = ["src"]
 
 [tool.setuptools.package-data]
-whimbox_adapter = ["py.typed"]
+whimbox_adapter = ["py.typed", "ui/*", "i18n/*.json"]
 
 [tool.auto-mas]
 bundled = true
