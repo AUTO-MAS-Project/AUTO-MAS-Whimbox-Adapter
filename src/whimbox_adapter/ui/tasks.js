@@ -85,9 +85,6 @@ function createView({ save, text, showError }) {
 
   return {
     render({ config, panelData }) {
-      document.getElementById('tags').textContent = (panelData?.tags ?? [])
-        .map(item => item.text)
-        .join(' · ')
       accounts.checked = !!config.OneDragon.IfRunAllAccounts
       columns.hidden = true
       version.textContent = ''

@@ -27,7 +27,7 @@ async function mountPanel() {
       if (!result.ok) throw new Error(result.message || result.code)
       showError('')
     } catch (error) {
-      applyConfig(await panel.readConfig())
+      applyConfig(await panel.getContext())
       showError(error.message)
     }
   }
@@ -52,12 +52,12 @@ async function mountPanel() {
     document.documentElement.lang = translated.locale
     for (const node of labels) node.textContent = text(node.dataset.text)
     if (context) {
-      const latest = await panel.readConfig()
+      const latest = await panel.getContext()
       if (language === next) applyConfig(latest)
     }
   }
 
-  const initial = await panel.readConfig()
+  const initial = await panel.getContext()
   panel.onStateChange(state => {
     void applyState(state).catch(error => showError(error.message))
   })

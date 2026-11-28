@@ -61,10 +61,6 @@ class WhimboxUserConfig(UserEntry):
             HostBlock("config_restore"),
         )
 
-        @ui_visibility("Info.Tag")
-        def tag_visibility(self):
-            return UiVisibility.HIDE
-
         @ui_visibility("Info.IfQuickConfig")
         def quick_config_visibility(self):
             return (
@@ -135,7 +131,7 @@ class WhimboxUserConfig(UserEntry):
 
         Status: bool = Field(description="账号状态", default_factory=lambda: True)
 
-        Tag: Virtual[str] = Field(
+        Tag: Annotated[Virtual[str], ui(format="status-tags")] = Field(
             description="账号标签列表（JSON字符串，TagItem的dict列表）",
             default_factory=lambda: None,
         )

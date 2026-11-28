@@ -1,7 +1,6 @@
 """Provide installation metadata only when a Whimbox editor requests its block."""
 
 import asyncio
-import json
 from dataclasses import asdict
 from pathlib import Path
 
@@ -34,10 +33,9 @@ async def read_panel_data(entry, page_id: str) -> dict:
     if page_id == "tasks" and isinstance(entry, WhimboxUserConfig):
         script = entry.parent.parent
         root = script.Info.RootPath
-        catalog = (
+        return (
             await asyncio.to_thread(_catalog, Path(root))
             if root
             else {"errorKey": "panel.missingRoot"}
         )
-        return {**catalog, "tags": json.loads(entry.getTags())}
     raise ValueError("未知的奇想盒编辑面板")
