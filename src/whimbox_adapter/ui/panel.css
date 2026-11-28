@@ -1,0 +1,127 @@
+:root {
+  color-scheme: light;
+  font:
+    14px/1.5 system-ui,
+    sans-serif;
+  color: var(--mas-text-primary, CanvasText);
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 1px;
+}
+fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--mas-border, #aaa);
+  border-radius: 8px;
+  padding: 12px 20px 16px;
+}
+legend,
+h3 {
+  font-weight: 600;
+}
+legend {
+  font-size: 16px;
+  padding: 0 4px;
+}
+h3 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+}
+input,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+input:not([type='checkbox']),
+select,
+button {
+  border: 1px solid var(--mas-border, #aaa);
+  border-radius: 6px;
+  padding: 4px 9px;
+  min-height: 32px;
+  background: var(--mas-bg-elevated, Canvas);
+}
+input:not([type='checkbox']),
+select,
+.picker {
+  width: min(52%, 340px);
+}
+input[role='switch'] {
+  appearance: none;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--mas-text-secondary, GrayText);
+  position: relative;
+  cursor: pointer;
+}
+input[role='switch']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  background: white;
+}
+input[role='switch']:checked {
+  background: var(--mas-primary, #1677ff);
+}
+input[role='switch']:checked::after {
+  left: 19px;
+}
+:disabled {
+  cursor: default;
+}
+.picker {
+  display: flex;
+  gap: 6px;
+}
+.picker input {
+  flex: 1;
+  min-width: 0;
+}
+.picker button {
+  flex: none;
+}
+#columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+#columns[hidden],
+[hidden] {
+  display: none;
+}
+output,
+.empty {
+  color: var(--mas-text-secondary, GrayText);
+}
+#status:not(:empty) {
+  padding: 6px 12px;
+  color: var(--mas-danger, #cf1322);
+}
+@media (max-width: 650px) {
+  #columns {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

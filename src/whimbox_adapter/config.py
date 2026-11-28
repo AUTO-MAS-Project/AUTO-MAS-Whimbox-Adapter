@@ -7,7 +7,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Annotated, Literal
 
-from auto_mas_core import ScriptEntry, UserEntry
+from auto_mas_core import ScriptEntry, ScriptTypeDecl, UserEntry
 from auto_mas_core.host.config import (
     ConfigCollection,
     ConfigGroup,
@@ -36,6 +36,12 @@ from pydantic import Field
 
 from .desktop_session import DesktopSessionRunFields
 
+# 同一个 SDK 版本号覆盖多代宿主。只有支持区块数据的宿主才能完整显示任务目录。
+HAS_PANEL_DATA = hasattr(ScriptTypeDecl, "read_panel_data")
+if HAS_PANEL_DATA:
+    from auto_mas_core import DeclarativeBlock, HostBlock, PluginBlock
+    from auto_mas_core.host.config import UiVisibility, ui_visibility
+
 
 class WhimboxUserConfig(UserEntry):
     """奇想盒账号配置（无限暖暖，一条龙配置档）
@@ -45,6 +51,25 @@ class WhimboxUserConfig(UserEntry):
     JSON map），不复制上游字段模型；写入时按当前模板键集过滤后物化到上游
     configs/config.json。
     """
+
+    if HAS_PANEL_DATA:
+        ui_blocks = (
+            DeclarativeBlock(("Info",)),
+            PluginBlock("tasks", fallback_groups=("OneDragon", "Task")),
+            DeclarativeBlock(("Notify",)),
+            HostBlock("webhooks"),
+            HostBlock("config_restore"),
+        )
+
+        @ui_visibility("Info.Tag")
+        def tag_visibility(self):
+            return UiVisibility.HIDE
+
+        @ui_visibility("Info.IfQuickConfig")
+        def quick_config_visibility(self):
+            return (
+                UiVisibility.SHOW if self.Info.Base == "native" else UiVisibility.HIDE
+            )
 
     class DataFields(ConfigGroup):
         LastProxyDate: Annotated[
@@ -134,7 +159,7 @@ class WhimboxUserConfig(UserEntry):
             default_factory=lambda: False, description="是否启用 Server 酱"
         )
 
-        ServerChanKey: str = Field(
+        ServerChanKey: Annotated[str, ui(format="password", secret=True)] = Field(
             default_factory=lambda: "", description="Server 酱密钥"
         )
 
@@ -212,6 +237,13 @@ class WhimboxConfig(ScriptEntry):
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
+
+    if HAS_PANEL_DATA:
+        ui_blocks = (
+            PluginBlock("installation", fallback_groups=("Info",)),
+            HostBlock("game_binding"),
+            DeclarativeBlock(("Run", "Update")),
+        )
 
     class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(

@@ -26,7 +26,7 @@ AUTO-MAS 的奇想盒（无限暖暖）专项插件。
 
 ## 本地开发
 
-将仓库克隆到 AUTO-MAS 主仓的 `plugins/whimbox_adapter`。在主仓执行 `yarn dev`，然后在插件中心启用源码插件。前端目前随主程序构建，入口为主仓 `frontend/src/views/whimbox/entry.ts`；主程序尚不支持独立加载插件前端。
+将仓库克隆到 AUTO-MAS 主仓的 `plugins/whimbox_adapter`。在主仓执行 `yarn dev`，然后在插件中心启用源码插件。支持区块面板数据的宿主从插件的 `ui/`、`i18n/` 加载托管和账号编辑页。旧版宿主继续使用其内置编辑页。
 
 旧托管仍使用 `WhimboxConfig` / `WhimboxUserConfig` 类型及原有 UID。插件在激活时将 `UserData` 转为 `users`，不重建账号。禁用沿用宿主语义，会删除本插件的托管和账号；操作前应先备份。
 

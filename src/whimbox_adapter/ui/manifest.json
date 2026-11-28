@@ -1,0 +1,8 @@
+{
+  "manifestVersion": 1,
+  "pages": {
+    "installation": { "web": { "entry": "installation.html", "panelApi": 1 } },
+    "tasks": { "web": { "entry": "tasks.html", "panelApi": 1 } }
+  },
+  "bindings": []
+}

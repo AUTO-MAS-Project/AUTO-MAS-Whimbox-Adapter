@@ -93,6 +93,7 @@ async def test_public_crud_restore_and_plugin_capabilities(
         info={"plugin_name": "whimbox_adapter", "state": PluginState.ENABLED}
     )
     record._plugin_cls = Adapter
+    record._plugin = Adapter()
     monkeypatch.setattr(Plugin, "script_types", {record.uid: Adapter.decl})
     monkeypatch.setattr(Plugin, "list_plugins", lambda: [record])
     monkeypatch.setitem(Plugin._calls, record.uid, CallGate())
@@ -116,6 +117,18 @@ async def test_public_crud_restore_and_plugin_capabilities(
         ).json()
         assert created["code"] == 200, created
         sid = created["scriptId"]
+        invalid_root = tmp_path_factory.mktemp("missing-executable")
+        refused = (
+            await client.post(
+                "/api/scripts/update",
+                json={
+                    "scriptId": sid,
+                    "data": {"Info": {"RootPath": str(invalid_root)}},
+                },
+            )
+        ).json()
+        assert refused["code"] != 200 and "whimbox_app.exe" in refused["message"]
+        assert scripts[sid].Info.RootPath != invalid_root
         for elevated, expected in [(False, "admin_required"), (True, None)]:
             monkeypatch.setattr("app.utils.IS_ELEVATED", elevated)
             details = (
@@ -139,6 +152,21 @@ async def test_public_crud_restore_and_plugin_capabilities(
         ).json()
         assert added["code"] == 200, added
         uid = added["userId"]
+        detail = (
+            await client.post(
+                "/api/scripts/user/get", json={"scriptId": sid, "userId": uid}
+            )
+        ).json()
+        assert detail["code"] == 200, detail
+        assert detail["ui"]["backupTargets"] == [
+            {"key": "mas", "kind": "user"},
+            {"key": "native", "kind": "script"},
+        ]
+        assert [
+            block["pageId"]
+            for block in detail["ui"]["blocks"]
+            if block["kind"] == "plugin"
+        ] == ["tasks"]
         user = scripts[sid].users[uid]
         user.Task.Tasks = '{"daily":true}'
         await user.commit()
@@ -178,6 +206,7 @@ async def test_public_crud_restore_and_plugin_capabilities(
 
         root = tmp_path_factory.mktemp("whimbox-install")
         other_id = scripts.add(WhimboxConfig, payload={"Info": {"RootPath": str(root)}})
+        (root / "whimbox_app.exe").touch()
         scripts[sid].Info.RootPath = root
         await scripts.commit()
         await scripts[sid].commit()
@@ -225,10 +254,10 @@ async def test_public_crud_restore_and_plugin_capabilities(
             entry.read_bytes() for entry in surface.backup_root().glob("*/config.json")
         ]
         assert not surface.has_pending_overlay()
-        # No built-in restore pool remains after migration.
+        # Both the legacy editor and the shared editor read the original snapshots.
         assert (await client.get("/api/scripts/backup/list", params=context)).json()[
             "code"
-        ] != 200
+        ] == 200
         schema = app.openapi()["components"]["schemas"]
         assert "WhimboxConfig" in schema and "WhimboxUserConfig" in schema
         assert Adapter.decl.activity_game == "infinitynikki"
