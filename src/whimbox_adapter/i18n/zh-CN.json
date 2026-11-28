@@ -9,7 +9,7 @@
   "plugins.whimbox_adapter.panel.options": "目标与参数",
   "plugins.whimbox_adapter.panel.accounts": "循环全部游戏账号",
   "plugins.whimbox_adapter.panel.empty": "暂无项目",
-  "plugins.whimbox_adapter.panel.inherit": "使用默认值",
+  "plugins.whimbox_adapter.panel.inherit": "沿用奇想盒配置",
   "plugins.whimbox_adapter.panel.missingRoot": "请先在托管设置中选择奇想盒安装目录。",
   "plugins.whimbox_adapter.panel.unavailable": "当前操作不可用，请重新加载或手动输入。",
   "plugins.whimbox_adapter.config.Info.RootPath.label": "奇想盒安装目录",
@@ -27,5 +27,7 @@
   "plugins.whimbox_adapter.config.Task.Options.label": "目标与参数",
   "plugins.whimbox_adapter.config.Run.RunTimesLimit.tip": "单次运行失败后的重试次数上限；一条龙步骤内的可恢复失败不会消耗重试",
   "plugins.whimbox_adapter.config.Run.RunTimeLimit.tip": "日志持续这么久没有新进展（分钟）即判定卡死并中止；一条龙多账号全循环耗时较长，请按需调大",
-  "plugins.whimbox_adapter.config.OneDragon.IfRunAllAccounts.tip": "开启后一条龙会依次切换游戏内已登录的全部账号逐个执行；账号列表由奇想盒自动识别，无需在 MAS 里登记"
+  "plugins.whimbox_adapter.config.OneDragon.IfRunAllAccounts.tip": "开启后一条龙会依次切换游戏内已登录的全部账号逐个执行；账号列表由奇想盒自动识别，无需在 MAS 里登记",
+  "plugins.whimbox_adapter.panel.on": "开启",
+  "plugins.whimbox_adapter.panel.off": "关闭"
 }

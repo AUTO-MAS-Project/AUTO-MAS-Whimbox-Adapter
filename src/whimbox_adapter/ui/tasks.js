@@ -13,58 +13,61 @@ function createView({ save, text, showError }) {
     return label
   }
 
-  function checkbox() {
-    const input = document.createElement('input')
-    input.type = 'checkbox'
-    input.setAttribute('role', 'switch')
-    return input
+  function saveOverride(field, map, key, value) {
+    if (value === undefined) delete map[key]
+    else map[key] = value
+    return save('Task', field, JSON.stringify(map))
   }
 
-  function setOption(key, value) {
-    if (value === undefined) delete options[key]
-    else options[key] = value
-    return save('Task', 'Options', JSON.stringify(options))
+  function booleanChoice(value, onChange) {
+    const select = document.createElement('select')
+    select.add(new Option(text('inherit'), ''))
+    select.add(new Option(text('on'), 'true'))
+    select.add(new Option(text('off'), 'false'))
+    select.value = typeof value === 'boolean' ? String(value) : ''
+    select.onchange = () => onChange(select.value === '' ? undefined : select.value === 'true')
+    return select
   }
 
   function optionControl(item) {
     const key = item.key
-    const value = options[key] ?? item.default
-    if (item.field_type === 'bool') {
-      const input = checkbox()
-      input.checked = value === true
-      input.onchange = () => setOption(key, input.checked)
-      return input
-    }
+    const value = options[key]
+    const setValue = next => saveOverride('Options', options, key, next)
+    if (item.field_type === 'bool') return booleanChoice(value, setValue)
     if (item.field_type === 'select' || item.field_type === 'multi_select') {
       const select = document.createElement('select')
       select.multiple = item.field_type === 'multi_select'
-      if (!select.multiple) select.add(new Option(text('inherit'), ''))
+      const inherit = new Option(text('inherit'), '', false, value === undefined)
+      select.add(inherit)
       const selected = new Set(select.multiple ? (value ?? []) : [value])
       for (const choice of new Set([...(item.options ?? []), ...selected])) {
-        if (typeof choice === 'string' && choice)
+        if (typeof choice === 'string')
           select.add(new Option(choice, choice, false, selected.has(choice)))
       }
       select.onchange = () => {
-        const next = select.multiple
-          ? [...select.selectedOptions].map(o => o.value)
-          : select.value || undefined
-        void setOption(key, next)
-        if (next === undefined) select.value = item.default ?? ''
+        const choices = [...select.selectedOptions].filter(option => option !== inherit)
+        if (inherit.selected && (options[key] !== undefined || !choices.length)) {
+          for (const option of choices) option.selected = false
+          void setValue(undefined)
+        } else {
+          inherit.selected = false
+          void setValue(select.multiple ? choices.map(option => option.value) : select.value)
+        }
       }
       return select
     }
     const input = document.createElement('input')
     input.type = item.field_type === 'int' ? 'number' : 'text'
     input.value = value ?? ''
+    input.placeholder = text('inherit')
     input.onchange = () => {
       if (!input.validity.valid) {
         input.reportValidity()
         return
       }
-      const next =
+      void setValue(
         input.value === '' ? undefined : input.type === 'number' ? input.valueAsNumber : input.value
-      void setOption(key, next)
-      if (next === undefined) input.value = item.default ?? ''
+      )
     }
     return input
   }
@@ -100,15 +103,12 @@ function createView({ save, text, showError }) {
         options = overrides(config.Task.Options)
         fill(
           'steps',
-          panelData.steps.map(step => {
-            const input = checkbox()
-            input.checked = tasks[step.key] ?? true
-            input.onchange = () => {
-              tasks[step.key] = input.checked
-              void save('Task', 'Tasks', JSON.stringify(tasks))
-            }
-            return row(step.display, input)
-          })
+          panelData.steps.map(step =>
+            row(
+              step.display,
+              booleanChoice(tasks[step.key], value => saveOverride('Tasks', tasks, step.key, value))
+            )
+          )
         )
         fill(
           'options',

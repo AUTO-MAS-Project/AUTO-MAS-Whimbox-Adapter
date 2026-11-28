@@ -9,7 +9,7 @@
   "plugins.whimbox_adapter.panel.options": "Targets and options",
   "plugins.whimbox_adapter.panel.accounts": "Run all game accounts",
   "plugins.whimbox_adapter.panel.empty": "No items",
-  "plugins.whimbox_adapter.panel.inherit": "Use default",
+  "plugins.whimbox_adapter.panel.inherit": "Use Whimbox settings",
   "plugins.whimbox_adapter.panel.missingRoot": "Choose the Whimbox installation folder in the script settings first.",
   "plugins.whimbox_adapter.panel.unavailable": "This operation is unavailable. Reload or enter the value manually.",
   "plugins.whimbox_adapter.config.Info.RootPath.label": "Whimbox installation folder",
@@ -27,5 +27,7 @@
   "plugins.whimbox_adapter.config.Task.Options.label": "Targets and options",
   "plugins.whimbox_adapter.config.Run.RunTimesLimit.tip": "Maximum retries after a failed run; recoverable failures inside OneDragon steps do not consume retries",
   "plugins.whimbox_adapter.config.Run.RunTimeLimit.tip": "Treat the run as stuck after this many minutes without new log output; full multi-account runs take longer, raise as needed",
-  "plugins.whimbox_adapter.config.OneDragon.IfRunAllAccounts.tip": "When on, the OneDragon runs every logged-in account in turn; the account list is detected by Whimbox itself, no need to register accounts here"
+  "plugins.whimbox_adapter.config.OneDragon.IfRunAllAccounts.tip": "When on, the OneDragon runs every logged-in account in turn; the account list is detected by Whimbox itself, no need to register accounts here",
+  "plugins.whimbox_adapter.panel.on": "On",
+  "plugins.whimbox_adapter.panel.off": "Off"
 }

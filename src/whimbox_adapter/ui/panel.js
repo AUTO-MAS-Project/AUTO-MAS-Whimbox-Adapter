@@ -10,6 +10,8 @@ async function mountPanel() {
       'unavailable',
       'empty',
       'inherit',
+      'on',
+      'off',
       'version',
     ]),
   ]

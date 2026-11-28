@@ -9,7 +9,7 @@
   "plugins.whimbox_adapter.panel.options": "対象と設定",
   "plugins.whimbox_adapter.panel.accounts": "すべてのゲームアカウントを実行",
   "plugins.whimbox_adapter.panel.empty": "項目がありません",
-  "plugins.whimbox_adapter.panel.inherit": "既定値を使用",
+  "plugins.whimbox_adapter.panel.inherit": "奇想盒の設定を使用",
   "plugins.whimbox_adapter.panel.missingRoot": "先にスクリプト設定で奇想盒のインストール先を選択してください。",
   "plugins.whimbox_adapter.panel.unavailable": "操作できません。再読み込みするか、手動で入力してください。",
   "plugins.whimbox_adapter.config.Info.RootPath.label": "奇想盒のインストール先",
@@ -27,5 +27,7 @@
   "plugins.whimbox_adapter.config.Task.Options.label": "対象と設定",
   "plugins.whimbox_adapter.config.Run.RunTimesLimit.tip": "1回の実行が失敗した後のリトライ回数の上限です。一条龍ステップ内の回復可能な失敗はリトライを消費しません",
   "plugins.whimbox_adapter.config.Run.RunTimeLimit.tip": "ログがこの時間（分）新しい進展がなければ、スタックと判定して中止します。一条龍のマルチアカウント全ループは時間がかかるため、必要に応じて大きくしてください",
-  "plugins.whimbox_adapter.config.OneDragon.IfRunAllAccounts.tip": "オンにすると、一条龍がゲーム内にログイン済みの全アカウントを順に切り替えて1つずつ実行します。アカウントリストは奇想盒が自動認識するため、MAS に登録する必要はありません"
+  "plugins.whimbox_adapter.config.OneDragon.IfRunAllAccounts.tip": "オンにすると、一条龍がゲーム内にログイン済みの全アカウントを順に切り替えて1つずつ実行します。アカウントリストは奇想盒が自動認識するため、MAS に登録する必要はありません",
+  "plugins.whimbox_adapter.panel.on": "オン",
+  "plugins.whimbox_adapter.panel.off": "オフ"
 }
