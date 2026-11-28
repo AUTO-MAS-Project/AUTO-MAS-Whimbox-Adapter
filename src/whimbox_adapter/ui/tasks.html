@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title data-i18n="panel.tasks.title"></title>
+    <link rel="stylesheet" href="./_host/panel-base.css">
+    <link rel="stylesheet" href="./tasks.css">
+    <script src="./_host/panel-sdk.js" defer></script>
+    <script src="./tasks.js" defer></script>
+  </head>
+  <body>
+    <main class="card">
+      <p id="status" role="status"></p>
+      <fieldset id="controls" class="grid" disabled hidden>
+        <section>
+          <h2><span data-i18n="panel.tasks.title"></span> <small id="version" class="version"></small></h2>
+          <div id="steps"></div>
+          <small class="hint" data-i18n="panel.tasks.stepHint"></small>
+          <small id="Tasks-error" class="field-error" role="alert"></small>
+        </section>
+        <section>
+          <h2 data-i18n="panel.tasks.options"></h2>
+          <div id="options"></div>
+          <small id="Options-error" class="field-error" role="alert"></small>
+        </section>
+      </fieldset>
+    </main>
+  </body>
+</html>

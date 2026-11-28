@@ -8,6 +8,7 @@ from .backup_api import router as backup_router
 from .config import WhimboxConfig, WhimboxUserConfig
 from .desktop_session import desktop_session_check
 from .manager import WhimboxManager, check_prefetch
+from .tools.restore_service import RESTORE_POOLS
 
 router = APIRouter()
 router.include_router(backup_router)
@@ -29,6 +30,7 @@ class Plugin(ScriptAdapterPlugin):
             else {}
         ),
         activity_game="infinitynikki",
+        restore_pools=tuple(RESTORE_POOLS),
     )
 
     async def pre_enable(self):

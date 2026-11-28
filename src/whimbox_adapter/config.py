@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Literal
 
-from auto_mas_core import ScriptEntry, UserEntry
+from auto_mas_core import (
+    DeclarativeBlock,
+    HostBlock,
+    PluginBlock,
+    ScriptEntry,
+    UserEntry,
+)
 from auto_mas_core.host.config import (
     ConfigCollection,
     ConfigGroup,
@@ -45,6 +52,16 @@ class WhimboxUserConfig(UserEntry):
     JSON map），不复制上游字段模型；写入时按当前模板键集过滤后物化到上游
     configs/config.json。
     """
+
+    ui_native_session = "config"
+    ui_blocks = (
+        HostBlock("config_restore"),
+        HostBlock("native_session"),
+        DeclarativeBlock(("Info", "OneDragon")),
+        PluginBlock("tasks", fallback_groups=("Task",)),
+        DeclarativeBlock(("Notify",)),
+        HostBlock("webhooks"),
+    )
 
     class DataFields(ConfigGroup):
         LastProxyDate: Annotated[
@@ -134,7 +151,7 @@ class WhimboxUserConfig(UserEntry):
             default_factory=lambda: False, description="是否启用 Server 酱"
         )
 
-        ServerChanKey: str = Field(
+        ServerChanKey: Annotated[str, ui(secret=True)] = Field(
             default_factory=lambda: "", description="Server 酱密钥"
         )
 
@@ -153,18 +170,34 @@ class WhimboxUserConfig(UserEntry):
     OneDragon: OneDragonFields = Field(default_factory=OneDragonFields)
 
     class TaskFields(ConfigGroup):
-        Options: JsonDictString = Field(
+        Options: Annotated[JsonDictString, ui(widget="textarea")] = Field(
             default_factory=lambda: "{ }",
             description="目标/参数覆盖集：JSON map {键: 值}，键集来自任务目录 （上游 OneDragon 节托管字段），只存用户显式选择的值",
         )
 
-        Tasks: JsonDictString = Field(
+        Tasks: Annotated[JsonDictString, ui(widget="textarea")] = Field(
             default_factory=lambda: "{ }",
             description="步骤开关覆盖集：JSON map {步骤键: bool}，键集来自任务目录 （上游 OneDragonDefaultSteps 节），只存用户勾选结果",
         )
 
+        Catalog: Annotated[Virtual[str], ui(widget="textarea")] = None
+
     Task: TaskFields = Field(default_factory=TaskFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
+
+    @virtual_field("Task.Catalog")
+    def task_catalog(self) -> str | None:
+        """通过宿主面板的只读配置快照提供上游目录。"""
+        from .api_service import read_task_catalog
+
+        script = self.parent.parent if self.parent is not None else None
+        if not isinstance(script, WhimboxConfig):
+            return None
+        try:
+            catalog = read_task_catalog(str(script.uid))
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as error:
+            return json.dumps({"error": str(error)}, ensure_ascii=False)
+        return json.dumps(asdict(catalog), ensure_ascii=False)
 
     def getTags(self) -> str:
         """生成奇想盒账号标签列表"""
@@ -200,6 +233,12 @@ class WhimboxUserConfig(UserEntry):
 
 class WhimboxConfig(ScriptEntry):
     "奇想盒配置（无限暖暖，BetterGI 线：无头 CLI + 日志面判定）"
+
+    ui_blocks = (
+        DeclarativeBlock(("Info",)),
+        HostBlock("game_binding"),
+        DeclarativeBlock(("Run", "Update")),
+    )
 
     class InfoFields(ConfigGroup):
         Name: str = Field(

@@ -352,6 +352,7 @@ RESTORE_POOLS = [
     _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
+        editor_scope="user",
         mas_base="sidecar_only",
         files=_mas_files,
         backup_root=_mas_backup_root,
@@ -361,6 +362,7 @@ RESTORE_POOLS = [
     _utils_config_restore.ConfigRestorePool(
         key="native",
         kind="script",
+        editor_scope="user",
         files=_native_files,
         backup_root=_native_root,
         preview=_preview_native,
